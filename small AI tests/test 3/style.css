@@ -849,9 +849,22 @@ kbd {
   text-shadow: 0 2px #841645, 0 0 8px rgba(255, 79, 145, 0.74);
 }
 
-.heart.is-lost {
-  opacity: 0.34;
-  filter: grayscale(1);
+.heart.is-half {
+  color: transparent;
+  background: linear-gradient(90deg, #ff4f91 0 50%, #432335 50% 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke-color: #d987a9;
+  filter: drop-shadow(0 2px #841645) drop-shadow(0 0 4px rgba(255, 79, 145, 0.58));
+}
+
+.heart.is-empty {
+  opacity: 0.42;
+}
+
+.stored-half-heart {
+  margin-left: clamp(1px, 0.2vw, 4px);
 }
 
 .shard-icon {
@@ -873,51 +886,6 @@ kbd {
 .difficulty-stat strong[data-difficulty="easy"] { color: var(--green); }
 .difficulty-stat strong[data-difficulty="hard"] { color: var(--orange); }
 .difficulty-stat strong[data-difficulty="nightmare"] { color: var(--violet-bright); }
-
-.heal-panel {
-  width: clamp(175px, 17vw, 278px);
-  padding: clamp(5px, 0.55vw, 9px);
-  border-color: rgba(70, 202, 255, 0.62);
-  background: rgba(5, 8, 17, 0.84);
-  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.46), inset 0 0 12px rgba(33, 170, 255, 0.12);
-}
-
-.heal-copy {
-  margin-bottom: 5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #c5f8ff;
-  font-size: clamp(6px, 0.66vw, 10px);
-  text-transform: uppercase;
-}
-
-.heal-copy strong {
-  margin-left: auto;
-  color: #fff;
-}
-
-.heal-icon {
-  color: var(--cyan);
-  text-shadow: 0 0 6px var(--cyan);
-}
-
-.heal-meter {
-  height: clamp(4px, 0.42vw, 7px);
-  padding: 1px;
-  border: 1px solid #37536d;
-  background: #03060b;
-  overflow: hidden;
-}
-
-.heal-meter span {
-  width: var(--progress, 0%);
-  height: 100%;
-  display: block;
-  background: linear-gradient(90deg, #237cff, var(--cyan-bright));
-  box-shadow: 0 0 8px var(--cyan);
-  transition: width 220ms ease;
-}
 
 .control-hint {
   min-height: clamp(27px, 3vw, 47px);
@@ -1243,6 +1211,91 @@ kbd {
   filter: drop-shadow(0 0 8px rgba(255, 73, 109, 0.86));
 }
 
+.death-crystal {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 13px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+
+.death-crystal::before {
+  content: "";
+  width: 112px;
+  height: 96px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 42, 94, 0.38) 0 10%, rgba(219, 22, 86, 0.2) 34%, rgba(129, 11, 64, 0.08) 54%, transparent 72%);
+  filter: blur(2px);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: death-crystal-glow 2.4s ease-in-out infinite;
+}
+
+.death-crystal-intact {
+  width: 38px;
+  height: 58px;
+  z-index: 1;
+  margin: 0;
+  animation: death-crystal-intact-break 780ms steps(7, end) both;
+}
+
+.death-crystal-piece {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+.death-crystal-piece img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  image-rendering: pixelated;
+  user-select: none;
+  pointer-events: none;
+}
+
+.death-crystal-piece-left {
+  clip-path: inset(0 50% 0 0);
+  animation: death-crystal-left-break 780ms steps(7, end) both;
+}
+
+.death-crystal-piece-right {
+  clip-path: inset(0 0 0 50%);
+  animation: death-crystal-right-break 780ms steps(7, end) both;
+}
+
+.death-crystal-piece-left img {
+  animation: death-crystal-left-hover 2.5s ease-in-out 780ms infinite;
+}
+
+.death-crystal-piece-right img {
+  animation: death-crystal-right-hover 2.3s ease-in-out 780ms infinite;
+}
+
+.death-crystal::after {
+  content: "";
+  width: 7px;
+  height: 55px;
+  position: absolute;
+  left: calc(50% - 3px);
+  top: 14px;
+  z-index: 3;
+  opacity: 0;
+  background: #fff4f7;
+  clip-path: polygon(35% 0, 100% 0, 58% 30%, 92% 30%, 25% 67%, 66% 67%, 0 100%, 25% 57%, 0 57%, 55% 23%, 24% 23%);
+  filter: drop-shadow(0 0 5px #ff365e);
+  animation: death-crystal-crack-flash 780ms steps(7, end) both;
+}
+
 .modal-eyebrow {
   margin: 0 0 7px;
   color: var(--violet-bright);
@@ -1427,6 +1480,46 @@ kbd {
   50% { opacity: 0.92; transform: translate(-50%, -50%) scale(1.04); }
 }
 
+@keyframes death-crystal-intact-break {
+  0%, 24% { opacity: 1; transform: scale(1); }
+  30% { opacity: 1; transform: scale(1.08); filter: brightness(1.8) drop-shadow(0 0 12px rgba(255, 73, 109, 1)); }
+  31%, 100% { opacity: 0; transform: scale(0.86); }
+}
+
+@keyframes death-crystal-left-break {
+  0%, 29% { opacity: 0; transform: translate(7px, -2px) scale(0.74); }
+  30% { opacity: 1; transform: translate(7px, -2px) scale(0.74); }
+  65% { opacity: 1; transform: translate(-6px, 6px) scale(1.04); }
+  100% { opacity: 1; transform: translate(-5px, 5px) scale(1); }
+}
+
+@keyframes death-crystal-right-break {
+  0%, 29% { opacity: 0; transform: translate(-7px, 2px) scale(0.74); }
+  30% { opacity: 1; transform: translate(-7px, 2px) scale(0.74); }
+  65% { opacity: 1; transform: translate(6px, -6px) scale(1.04); }
+  100% { opacity: 1; transform: translate(5px, -5px) scale(1); }
+}
+
+@keyframes death-crystal-left-hover {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(2px); }
+}
+
+@keyframes death-crystal-right-hover {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes death-crystal-crack-flash {
+  0%, 17%, 44%, 100% { opacity: 0; }
+  24%, 31% { opacity: 1; }
+}
+
+@keyframes death-crystal-glow {
+  0%, 100% { opacity: 0.62; transform: translate(-50%, -50%) scale(0.94); }
+  50% { opacity: 0.86; transform: translate(-50%, -50%) scale(1.05); }
+}
+
 /* Responsive adjustments */
 @media (max-width: 820px) {
   .menu-layout {
@@ -1557,10 +1650,6 @@ kbd {
 
   .difficulty-stat {
     display: none;
-  }
-
-  .heal-panel {
-    width: 132px;
   }
 
   .control-hint span {

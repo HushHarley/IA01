@@ -23,7 +23,7 @@ Then visit `http://127.0.0.1:4173/`.
 - `F`: use the selected item
 - `Esc`: pause or resume
 
-Shards are objective progress, laser ammunition, and light. Collect 10, return to the exit, face it, and survive the two-second activation as the nine original frame sockets fill one by one and the tenth charge fully awakens the center crystal. Collected crystal veins reform elsewhere after a difficulty-scaled delay, with a three-second emergency recovery if the cave is exhausted before the objective is charged. Half Hearts occupy individual hotbar slots; using two restores one life.
+Shards are objective progress, laser ammunition, and light. Collect 10, return to the exit, face it, and survive the two-second activation as the nine original frame sockets fill one by one and the tenth charge fully awakens the center crystal. Collected crystal veins reform elsewhere after a difficulty-scaled delay, with a three-second emergency recovery if the cave is exhausted before the objective is charged. Half Hearts occupy individual hotbar slots; using one fills half of the next life in the lives row, and using two restores one life.
 
 ## Included systems
 
@@ -31,9 +31,10 @@ Shards are objective progress, laser ammunition, and light. Collect 10, return t
 - Three visual/light profiles: Upper Crystal Caverns, Deep Crystal Network, and The Abyss
 - Four difficulties with exact 80% / 90% / 100% / 120% enemy-speed baselines
 - Crystal Stalker, Shard Crawler, and two-hit Abyss Brute enemies
+- Coordinated enemy attacks: two-enemy strike relays and 3+ enemy flanking packs
 - Atlas-anchored emissive eyes that remain aligned when enemies turn and scale
 - Wander, scan, alert, chase, search, and return AI with line-of-sight hiding
-- Loose mined Shards, +2 Crystal Chunks, safe crystal-vein respawns, six non-stacking item slots, and Half Heart healing
+- Loose mined Shards, +2 Crystal Chunks, safe crystal-vein respawns, six non-stacking item slots, and lives-row Half Heart healing
 - Three-frame walking cycles with distinct down, left, right, and up artwork
 - Lives, knockback, invulnerability, standard retries, and Nightmare run resets
 - Level unlocks and preference persistence through `localStorage`
@@ -42,12 +43,13 @@ Shards are objective progress, laser ammunition, and light. Collect 10, return t
 ## Structure
 
 - `index.html` / `style.css`: responsive menu, HUD, overlays, and presentation
-- `assets/`: original menu backdrop, transparent gameplay, empty-gate, mined-pickup, and directional player sprite atlases, plus the favicon
+- `assets/`: original menu backdrop, transparent gameplay, empty-gate, mined-pickup, directional player sprite atlases, the cracked death-crystal sprite, and the favicon
 - `js/config.js`: balancing and data definitions
 - `js/maze.js`: deterministic cave generation and validation
 - `js/game.js`: state machine and gameplay orchestration
 - `js/renderer.js`: pixel-style Canvas rendering and lighting
 - `js/entities.js`: player, population, pickup, and enemy factories
+- `js/enemy-coordination.js`: nearby chase-group roles, duo handoffs, and pack formations
 - `js/input.js` / `js/audio.js`: controls and synthesized soundscape
 - `js/pathfinding.js`: grid paths, flood distances, and line of sight
 - `tests/logic-smoke.mjs`: repeatable generation/population checks

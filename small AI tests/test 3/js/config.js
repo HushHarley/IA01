@@ -175,7 +175,7 @@ export const DIFFICULTY_CONFIG = deepFreeze({
     enemySpeedMultiplier: 1.2,
     mapSizeMultiplier: 1.24,
     enemyDensityMultiplier: 1.58,
-    crystalSpawnMultiplier: 0.72,
+    crystalSpawnMultiplier: 0.82,
     crystalRespawnMultiplier: 1.45,
     halfHeartSpawnMultiplier: 0.5,
     detectionMultiplier: 1.3,

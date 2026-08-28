@@ -56,6 +56,12 @@ export function createEnemy(typeId, cell, id, rng) {
     lostSightTimer: 0,
     stun: 0,
     contactCooldown: 0,
+    coordinationMode: "solo",
+    coordinationRole: "solo",
+    coordinationGroupId: null,
+    coordinationGroupSize: 1,
+    coordinationPartnerId: null,
+    coordinationSlotAngle: null,
     dead: false,
   };
 }

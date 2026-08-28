@@ -206,6 +206,7 @@
                     <span id="heart1" class="heart is-full" data-heart="1">♥</span>
                     <span id="heart2" class="heart is-full" data-heart="2">♥</span>
                     <span id="heart3" class="heart is-full" data-heart="3">♥</span>
+                    <span id="storedHalfHeart" class="heart stored-half-heart" hidden>♥</span>
                   </span>
                 </div>
 
@@ -226,16 +227,6 @@
                 </div>
               </div>
 
-              <div id="healPanel" class="heal-panel pixel-frame" aria-label="Healing charge 0 of 2 shards">
-                <div class="heal-copy">
-                  <span class="heal-icon" aria-hidden="true">✦</span>
-                  <span>Healing light</span>
-                  <strong id="healProgressText">0/2</strong>
-                </div>
-                <div class="heal-meter" role="progressbar" aria-label="Healing charge" aria-valuemin="0" aria-valuemax="2" aria-valuenow="0">
-                  <span id="healProgress" style="--progress: 0%"></span>
-                </div>
-              </div>
             </div>
 
             <aside id="controlHint" class="control-hint pixel-frame" aria-live="polite">
@@ -311,7 +302,15 @@
 
       <section id="deathOverlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="deathTitle" aria-describedby="deathDescription" hidden>
         <div class="modal-card pixel-frame" data-modal="death">
-          <span class="modal-gem danger-gem" aria-hidden="true"></span>
+          <span class="death-crystal" aria-hidden="true">
+            <span class="modal-gem danger-gem death-crystal-intact"></span>
+            <span class="death-crystal-piece death-crystal-piece-left">
+              <img src="assets/death-crystal-cracked-v1.png" alt="" draggable="false">
+            </span>
+            <span class="death-crystal-piece death-crystal-piece-right">
+              <img src="assets/death-crystal-cracked-v1.png" alt="" draggable="false">
+            </span>
+          </span>
           <p class="modal-eyebrow">Run ended</p>
           <h2 id="deathTitle">The Light Fades</h2>
           <p id="deathDescription">The labyrinth has claimed this attempt, but the path remains.</p>

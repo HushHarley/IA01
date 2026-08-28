@@ -76,6 +76,92 @@ const PLAYER_WALK_FRAMES = Object.freeze({
 
 const PLAYER_WALK_ROWS = Object.freeze({ down: 0, left: 1, right: 2, up: 3 });
 
+// The atlas corner opens down and right; each subsequent entry rotates it clockwise.
+const WALL_CORNER_PATTERNS = Object.freeze([
+  { vertical: "below", horizontal: "right", quarterTurns: 0 },
+  { vertical: "below", horizontal: "left", quarterTurns: 1 },
+  { vertical: "above", horizontal: "left", quarterTurns: 2 },
+  { vertical: "above", horizontal: "right", quarterTurns: 3 },
+]);
+
+// The atlas straight faces downward before rotation.
+const WALL_STRAIGHT_TURNS = Object.freeze({
+  below: 0,
+  left: 1,
+  above: 2,
+  right: 3,
+});
+
+function worldTileAt(world, x, y) {
+  if (x < 0 || y < 0 || x >= world.width || y >= world.height) return TILE_TYPES.WALL;
+  return world.tiles[y][x];
+}
+
+/** Map surrounding floor tiles to the correctly oriented wall atlas artwork. */
+export function getWallTileStyle(world, tileX, tileY) {
+  const floor = {
+    below: worldTileAt(world, tileX, tileY + 1) === TILE_TYPES.FLOOR,
+    left: worldTileAt(world, tileX - 1, tileY) === TILE_TYPES.FLOOR,
+    above: worldTileAt(world, tileX, tileY - 1) === TILE_TYPES.FLOOR,
+    right: worldTileAt(world, tileX + 1, tileY) === TILE_TYPES.FLOOR,
+  };
+  const cardinalCount = Object.values(floor).filter(Boolean).length;
+
+  if (cardinalCount > 0) {
+    const corner = WALL_CORNER_PATTERNS.find(({ vertical, horizontal }) => floor[vertical] && floor[horizontal]);
+    if (corner) {
+      return {
+        edge: true,
+        kind: "corner",
+        spriteId: "wallSide",
+        quarterTurns: corner.quarterTurns,
+        floor,
+      };
+    }
+
+    const opening = Object.keys(WALL_STRAIGHT_TURNS).find((direction) => floor[direction]);
+    return {
+      edge: true,
+      kind: "straight",
+      spriteId: "wallFront",
+      quarterTurns: WALL_STRAIGHT_TURNS[opening],
+      floor,
+    };
+  }
+
+  const diagonalCorners = [
+    { x: 1, y: 1, quarterTurns: 0 },
+    { x: -1, y: 1, quarterTurns: 1 },
+    { x: -1, y: -1, quarterTurns: 2 },
+    { x: 1, y: -1, quarterTurns: 3 },
+  ];
+  const diagonal = diagonalCorners.find(({ x, y }) =>
+    worldTileAt(world, tileX + x, tileY + y) === TILE_TYPES.FLOOR
+  );
+
+  if (diagonal) {
+    return {
+      edge: true,
+      kind: "inner-corner",
+      spriteId: "wallSide",
+      quarterTurns: diagonal.quarterTurns,
+      floor,
+    };
+  }
+
+  return { edge: false, kind: "void", spriteId: null, quarterTurns: 0, floor };
+}
+
+/** Flip wall lighting toward the floor without changing the mapped edge topology. */
+export function getWallAtlasTransform(wallStyle) {
+  if (!wallStyle?.edge) return { quarterTurns: 0, flipX: false };
+  const turnOffset = wallStyle.kind === "straight" ? 2 : 3;
+  return {
+    quarterTurns: (wallStyle.quarterTurns + turnOffset) % 4,
+    flipX: true,
+  };
+}
+
 const ENEMY_ATLAS_PROFILES = Object.freeze({
   basic: Object.freeze({
     spriteId: "stalker",
@@ -278,7 +364,8 @@ export class Renderer {
     const bottom = screen.y + enemy.radius + 8;
     const left = screen.x - width / 2;
     const top = bottom - height;
-    const flipX = Math.cos(enemy.facingAngle || 0) < 0;
+    // Enemy atlas art faces left by default, so rightward movement must mirror it.
+    const flipX = Math.cos(enemy.facingAngle || 0) > 0;
     const scaleX = width / sprite.width;
     const scaleY = height / sprite.height;
     const eyes = profile.eyes.map((source) => {
@@ -340,15 +427,17 @@ export class Renderer {
     return true;
   }
 
-  drawAtlasTileOverlay(ctx, spriteId, x, y, variant, alpha = 0.7, size = 38, rotate = true) {
+  drawAtlasTileOverlay(ctx, spriteId, x, y, variant, alpha = 0.7, size = 38, options = {}) {
     if (!this.atlasReady) return;
     const sprite = ATLAS_SPRITES[spriteId];
     if (!sprite) return;
+    const quarterTurns = options.quarterTurns ?? Math.floor(variant * 4);
+    const flipX = options.flipX ?? variant > 0.5;
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(Math.round(x + TILE_SIZE / 2), Math.round(y + TILE_SIZE / 2));
-    if (rotate) ctx.rotate(Math.floor(variant * 4) * (Math.PI / 2));
-    if (variant > 0.5) ctx.scale(-1, 1);
+    ctx.rotate(quarterTurns * (Math.PI / 2));
+    if (flipX) ctx.scale(-1, 1);
     ctx.drawImage(
       this.gameplayAtlas,
       sprite.x,
@@ -441,11 +530,9 @@ export class Renderer {
   }
 
   drawWallTile(ctx, world, x, y, tileX, tileY, seed) {
-    const floorBelow = this.tileAt(world, tileX, tileY + 1) === TILE_TYPES.FLOOR;
-    const floorAbove = this.tileAt(world, tileX, tileY - 1) === TILE_TYPES.FLOOR;
-    const floorLeft = this.tileAt(world, tileX - 1, tileY) === TILE_TYPES.FLOOR;
-    const floorRight = this.tileAt(world, tileX + 1, tileY) === TILE_TYPES.FLOOR;
-    const edge = floorBelow || floorAbove || floorLeft || floorRight;
+    const wallStyle = getWallTileStyle(world, tileX, tileY);
+    const { below: floorBelow, above: floorAbove, left: floorLeft, right: floorRight } = wallStyle.floor;
+    const { edge } = wallStyle;
     const variant = hash2D(tileX, tileY, seed + 91);
 
     ctx.fillStyle = edge ? "#171039" : "#08081c";
@@ -502,13 +589,22 @@ export class Renderer {
       ctx.fillRect(x + 6, y + 9, 4, 2);
       ctx.globalAlpha = 1;
     }
-    const wallSprite = floorBelow || floorAbove ? "wallFront" : "wallSide";
-    this.drawAtlasTileOverlay(ctx, wallSprite, x, y, variant, floorBelow ? 0.86 : 0.68, floorBelow ? 42 : 38, false);
+    const isCorner = wallStyle.kind !== "straight";
+    const wallTransform = getWallAtlasTransform(wallStyle);
+    this.drawAtlasTileOverlay(
+      ctx,
+      wallStyle.spriteId,
+      x,
+      y,
+      variant,
+      isCorner ? 0.74 : 0.82,
+      wallStyle.kind === "inner-corner" ? 38 : 42,
+      wallTransform,
+    );
   }
 
   tileAt(world, x, y) {
-    if (x < 0 || y < 0 || x >= world.width || y >= world.height) return TILE_TYPES.WALL;
-    return world.tiles[y][x];
+    return worldTileAt(world, x, y);
   }
 
   drawWorldDecorations(game) {

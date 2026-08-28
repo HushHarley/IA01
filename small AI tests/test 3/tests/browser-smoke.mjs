@@ -223,6 +223,7 @@ const enemyEyeGeometry = await evaluate(`(() => {
     return {
       type,
       eyeCount: normal.eyes.length,
+      facesMovementDirection: normal.flipX === true && flipped.flipX === false,
       contained: normal.eyes.every((eye) =>
         eye.x >= normal.left && eye.y >= normal.top
         && eye.x + eye.width <= normal.left + normal.width
@@ -237,6 +238,7 @@ const enemyEyeGeometry = await evaluate(`(() => {
 })()`);
 for (const geometry of enemyEyeGeometry) {
   assert.equal(geometry.eyeCount, 2, `${geometry.type} should reuse both eyes from its atlas sprite.`);
+  assert.equal(geometry.facesMovementDirection, true, `${geometry.type} artwork should face its movement direction.`);
   assert.equal(geometry.contained, true, `${geometry.type} eye crops must stay inside the rendered sprite.`);
   assert.equal(geometry.mirrorsExactly, true, `${geometry.type} eye crops must mirror with the sprite.`);
 }
@@ -273,6 +275,47 @@ await evaluate(`(() => {
 await sleep(180);
 const enemyEyesScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
 await writeFile(new URL("./enemy-eyes-smoke.png", import.meta.url), Buffer.from(enemyEyesScreenshot.data, "base64"));
+
+const coordinationState = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  const playerTile = { x: Math.floor(game.player.x / 32), y: Math.floor(game.player.y / 32) };
+  for (const enemy of game.enemies) {
+    enemy.state = "chase";
+    enemy.dead = false;
+    enemy.coordinationMode = "solo";
+    enemy.coordinationRole = "solo";
+    enemy.coordinationGroupId = null;
+    enemy.coordinationPartnerId = null;
+  }
+  game.assignEnemyCoordination();
+  const packRoles = game.enemies.map((enemy) => enemy.coordinationRole);
+  const flankPlans = game.enemies
+    .filter((enemy) => enemy.coordinationRole === "pack-flanker")
+    .map((enemy) => game.getEnemyChasePlan(enemy, playerTile));
+
+  game.enemies = game.enemies.slice(0, 2);
+  game.assignEnemyCoordination();
+  const firstStriker = game.enemies.find((enemy) => enemy.coordinationRole === "duo-striker");
+  const firstReserve = game.enemies.find((enemy) => enemy.coordinationRole === "duo-reserve");
+  game.advanceDuoAttack(firstStriker);
+  const reservePlan = game.getEnemyChasePlan(firstStriker, playerTile);
+  return {
+    packPressureCount: packRoles.filter((role) => role === "pack-pressure").length,
+    packFlankerCount: packRoles.filter((role) => role === "pack-flanker").length,
+    flankersLeaveDirectLane: flankPlans.every((plan) => plan.targetCell.x !== playerTile.x || plan.targetCell.y !== playerTile.y),
+    duoRolesBefore: [firstStriker.id, firstReserve.id],
+    duoRolesAfter: [
+      game.enemies.find((enemy) => enemy.coordinationRole === "duo-striker").id,
+      game.enemies.find((enemy) => enemy.coordinationRole === "duo-reserve").id,
+    ],
+    reserveWaits: reservePlan.speedMultiplier < 1 && (reservePlan.targetCell.x !== playerTile.x || reservePlan.targetCell.y !== playerTile.y),
+  };
+})()`);
+assert.equal(coordinationState.packPressureCount, 1, "A browser-side pack should keep one direct pursuer.");
+assert.equal(coordinationState.packFlankerCount, 2, "A three-enemy pack should send two members around the player.");
+assert.equal(coordinationState.flankersLeaveDirectLane, true, "Pack flankers should target surrounding lanes instead of piling onto the player tile.");
+assert.notDeepEqual(coordinationState.duoRolesAfter, coordinationState.duoRolesBefore, "The reserve should take over after the first duo striker lands a hit.");
+assert.equal(coordinationState.reserveWaits, true, "The first duo attacker should fall back to a slower waiting position.");
 
 await evaluate("window.crystalLabyrinth.enemies = []");
 const movementSetup = await evaluate(`(() => {
@@ -395,10 +438,41 @@ assert.match(halfHeartIcon.backgroundImage, /gameplay-atlas-v3\.png/, "The hotba
 assert.equal(halfHeartIcon.aspectRatio, "156 / 148", "The hotbar sprite should preserve the floor Half Heart's proportions.");
 await tap("KeyF", "f");
 assert.equal(await evaluate("window.crystalLabyrinth.player.healProgress"), 1, "First Half Heart should store half a heal.");
+const halfLifeHud = await evaluate(`(() => {
+  const nextHeart = document.getElementById("heart3");
+  const storedHeart = document.getElementById("storedHalfHeart");
+  return {
+    oldPanelPresent: Boolean(document.getElementById("healPanel")),
+    nextHeartIsHalf: nextHeart.classList.contains("is-half"),
+    nextHeartGlyph: nextHeart.textContent,
+    storedHeartHidden: storedHeart.hidden,
+    label: document.getElementById("livesDisplay").getAttribute("aria-label"),
+  };
+})()`);
+assert.equal(halfLifeHud.oldPanelPresent, false, "The separate healing meter should be removed.");
+assert.equal(halfLifeHud.nextHeartIsHalf, true, "One used Half Heart should fill half of the next life slot.");
+assert.equal(halfLifeHud.nextHeartGlyph, "♥", "The half life should retain a filled-heart silhouette.");
+assert.equal(halfLifeHud.storedHeartHidden, true, "The extra stored slot is only needed when all lives are full.");
+assert.equal(halfLifeHud.label, "2 and a half lives", "The lives display should announce the partial life.");
 await tap("Digit2", "2");
 await tap("KeyF", "f");
 const healed = await evaluate(`({ lives: window.crystalLabyrinth.player.lives, charge: window.crystalLabyrinth.player.healProgress, items: window.crystalLabyrinth.player.hotbar.slice(0, 2) })`);
 assert.deepEqual(healed, { lives: 3, charge: 0, items: [null, null] });
+
+const fullLifeStoredHalf = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  game.player.healProgress = 1;
+  game.updateHud();
+  const storedHeart = document.getElementById("storedHalfHeart");
+  return {
+    visible: !storedHeart.hidden,
+    isHalf: storedHeart.classList.contains("is-half"),
+    label: document.getElementById("livesDisplay").getAttribute("aria-label"),
+  };
+})()`);
+assert.equal(fullLifeStoredHalf.visible, true, "A Half Heart stored at full lives should remain visible beside the life slots.");
+assert.equal(fullLifeStoredHalf.isHalf, true, "The full-health overflow slot should use the same half-heart treatment.");
+assert.equal(fullLifeStoredHalf.label, "3 lives, one Half Heart stored", "The full-health stored half should be announced clearly.");
 
 await evaluate(`(() => {
   const game = window.crystalLabyrinth;
@@ -485,8 +559,76 @@ assert.deepEqual(carried, { level: 2, lives: 2, shards: 0, item: "half-heart", h
 await evaluate(`(() => {
   const game = window.crystalLabyrinth;
   game.fullDeath();
-  game.retryAfterDeath();
 })()`);
+await sleep(900);
+const deathCrystalEffect = await evaluate(`(() => {
+  const overlay = document.getElementById("deathOverlay");
+  const intact = overlay.querySelector(".death-crystal-intact");
+  const crystal = overlay.querySelector(".death-crystal");
+  const left = overlay.querySelector(".death-crystal-piece-left");
+  const right = overlay.querySelector(".death-crystal-piece-right");
+  const images = [...overlay.querySelectorAll(".death-crystal-piece img")];
+  const leftBox = left.getBoundingClientRect();
+  const rightBox = right.getBoundingClientRect();
+  const glowStyle = getComputedStyle(crystal, "::before");
+  return {
+    visible: !overlay.hidden,
+    imagesReady: images.length === 2 && images.every((image) => image.complete && image.naturalWidth === 1254 && image.naturalHeight === 1254),
+    assetMatched: images.every((image) => image.currentSrc.endsWith("/assets/death-crystal-cracked-v1.png")),
+    intactOpacity: Number.parseFloat(getComputedStyle(intact).opacity),
+    leftOpacity: Number.parseFloat(getComputedStyle(left).opacity),
+    rightOpacity: Number.parseFloat(getComputedStyle(right).opacity),
+    leftIsLower: leftBox.top > rightBox.top,
+    leftIsLeftward: leftBox.left < rightBox.left,
+    leftAnimation: getComputedStyle(left).animationName,
+    rightAnimation: getComputedStyle(right).animationName,
+    piecesHaveNoGlowFilter: getComputedStyle(left).filter === "none" && getComputedStyle(right).filter === "none",
+    glowIsContinuous: glowStyle.backgroundImage.includes("radial-gradient") && glowStyle.clipPath === "none",
+    glowAnimation: glowStyle.animationName,
+  };
+})()`);
+assert.equal(deathCrystalEffect.visible, true, "Death should reveal the cracked-crystal overlay.");
+assert.equal(deathCrystalEffect.imagesReady, true, "Both death-crystal halves should load from the new transparent sprite.");
+assert.equal(deathCrystalEffect.assetMatched, true, "Both independently animated halves should reuse the cracked crystal asset.");
+assert.equal(deathCrystalEffect.intactOpacity, 0, "The intact red crystal should disappear after the crack.");
+assert.equal(deathCrystalEffect.leftOpacity, 1);
+assert.equal(deathCrystalEffect.rightOpacity, 1);
+assert.equal(deathCrystalEffect.leftIsLower, true, "The left cracked half should settle lower than the right half.");
+assert.equal(deathCrystalEffect.leftIsLeftward, true, "The two cracked halves should separate horizontally.");
+assert.equal(deathCrystalEffect.leftAnimation, "death-crystal-left-break");
+assert.equal(deathCrystalEffect.rightAnimation, "death-crystal-right-break");
+assert.equal(deathCrystalEffect.piecesHaveNoGlowFilter, true, "Clipped crystal halves should not clip their own background glow.");
+assert.equal(deathCrystalEffect.glowIsContinuous, true, "One unclipped radial glow should sit behind both crystal halves.");
+assert.equal(deathCrystalEffect.glowAnimation, "death-crystal-glow");
+const deathScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
+await writeFile(new URL("./death-smoke.png", import.meta.url), Buffer.from(deathScreenshot.data, "base64"));
+await evaluate(`(() => {
+  document.documentElement.dataset.reducedMotion = "true";
+  const overlay = document.getElementById("deathOverlay");
+  overlay.hidden = true;
+  void overlay.offsetWidth;
+  overlay.hidden = false;
+})()`);
+await sleep(30);
+const reducedDeathCrystal = await evaluate(`(() => {
+  const overlay = document.getElementById("deathOverlay");
+  const intact = overlay.querySelector(".death-crystal-intact");
+  const left = overlay.querySelector(".death-crystal-piece-left");
+  const right = overlay.querySelector(".death-crystal-piece-right");
+  return {
+    intactOpacity: Number.parseFloat(getComputedStyle(intact).opacity),
+    leftOpacity: Number.parseFloat(getComputedStyle(left).opacity),
+    rightOpacity: Number.parseFloat(getComputedStyle(right).opacity),
+    leftIsLower: left.getBoundingClientRect().top > right.getBoundingClientRect().top,
+  };
+})()`);
+assert.deepEqual(
+  reducedDeathCrystal,
+  { intactOpacity: 0, leftOpacity: 1, rightOpacity: 1, leftIsLower: true },
+  "Reduced motion should skip directly to the correctly separated crystal halves.",
+);
+await evaluate("document.documentElement.dataset.reducedMotion = 'false'");
+await evaluate("window.crystalLabyrinth.retryAfterDeath()");
 await sleep(550);
 const standardRetry = await evaluate(`(() => {
   const game = window.crystalLabyrinth;
@@ -514,7 +656,7 @@ const nightmareRetry = await evaluate(`(() => {
 assert.deepEqual(nightmareRetry, { level: 1, selected: 1, savedUnlock: 2, difficulty: "nightmare", lives: 3, hotbarEmpty: true }, "Nightmare death should discard intermediate checkpoints and force Level 1 through the menu.");
 
 assert.deepEqual(browserErrors, [], `Browser errors: ${browserErrors.join(" | ")}`);
-console.log("Browser smoke test passed: boot, directional walk animation, atlas-aligned enemy eyes, mined pickups, movement, firing, crystal respawn, Half Hearts, animated door sockets, crystal-centered completion aura, carryover, standard retry, and Nightmare reset.");
+console.log("Browser smoke test passed: boot, directional walk animation, correctly facing enemies, duo and pack coordination, mined pickups, movement, firing, crystal respawn, Half Hearts, animated door sockets, crystal-centered completion aura, cracked death crystal, carryover, standard retry, and Nightmare reset.");
 
 await command("Browser.close").catch(() => {});
 socket.close();

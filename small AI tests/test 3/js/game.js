@@ -12,6 +12,11 @@ import {
   TILE_TYPES,
 } from "./config.js";
 import { createPlayer, populateWorld } from "./entities.js";
+import {
+  canEnemyContactAttack,
+  ENEMY_COORDINATION,
+  planEnemyCoordination,
+} from "./enemy-coordination.js";
 import { InputManager } from "./input.js";
 import { generateMaze, SeededRNG } from "./maze.js";
 import { findPath, hasLineOfSight } from "./pathfinding.js";
@@ -123,7 +128,7 @@ export class CrystalLabyrinthGame {
       "app", "menuScreen", "gameScreen", "gameCanvas", "gameViewport",
       "playButton", "exitButton", "audioToggle", "motionToggle", "pauseButton",
       "livesDisplay", "livesHearts", "shardCount", "shardGoal", "levelNumber",
-      "difficultyLabel", "healPanel", "healProgressText", "healProgress",
+      "difficultyLabel", "storedHalfHeart",
       "controlHintKey", "controlHintText", "gameMessage", "gameMessageIcon",
       "gameMessageText", "toast", "toastText", "levelHint", "resumeButton",
       "restartLevelButton", "pauseMenuButton", "retryButton", "deathMenuButton",
@@ -139,7 +144,6 @@ export class CrystalLabyrinthGame {
     dom.difficultyButtons = [...document.querySelectorAll("[data-difficulty]")];
     dom.levelButtons = [...document.querySelectorAll("[data-level]")];
     dom.hotbarButtons = [...document.querySelectorAll(".hotbar-slot")];
-    dom.healMeter = document.querySelector(".heal-meter");
     dom.hearts = [...document.querySelectorAll("[data-heart]")];
     dom.modals = MODAL_IDS.map(byId);
     return dom;
@@ -709,7 +713,7 @@ export class CrystalLabyrinthGame {
 
     if (this.player.healProgress === 1 && this.player.lives >= this.player.maxLives) {
       this.audio.locked({ volume: 0.3 });
-      this.showToast("Healing charge is ready, but your lives are already full.", 2.1);
+      this.showToast("A half-heart is already stored, but your lives are full.", 2.1);
       return;
     }
 
@@ -717,7 +721,7 @@ export class CrystalLabyrinthGame {
     if (this.player.healProgress === 0) {
       this.player.healProgress = 1;
       this.audio.heart({ volume: 0.55, pitch: 0 });
-      this.showToast("Healing light stored: 1/2. Another Half Heart restores a life.", 2.6);
+      this.showToast("Half a life stored. Another Half Heart completes it.", 2.6);
     } else {
       this.player.healProgress = 0;
       this.player.lives = Math.min(this.player.maxLives, this.player.lives + 1);
@@ -837,6 +841,7 @@ export class CrystalLabyrinthGame {
   }
 
   updateEnemies(dt) {
+    this.assignEnemyCoordination();
     for (const enemy of this.enemies) {
       if (enemy.dead) continue;
       enemy.stun = Math.max(0, enemy.stun - dt);
@@ -847,10 +852,31 @@ export class CrystalLabyrinthGame {
       if (
         this.player.invulnerability <= 0 &&
         enemy.contactCooldown <= 0 &&
+        canEnemyContactAttack(enemy) &&
         distanceSquared(enemy, this.player) <= (enemy.radius + this.player.radius) ** 2
       ) {
         this.damagePlayer(enemy);
         if (this.state !== GAME_STATES.PLAYING) break;
+      }
+    }
+  }
+
+  assignEnemyCoordination() {
+    const assignments = planEnemyCoordination(this.enemies, this.player);
+    for (const enemy of this.enemies) {
+      if (enemy.dead) continue;
+      const assignment = assignments.get(String(enemy.id));
+      const nextRole = assignment?.role || "solo";
+      const roleChanged = enemy.coordinationRole !== nextRole;
+      enemy.coordinationMode = assignment?.mode || "solo";
+      enemy.coordinationRole = nextRole;
+      enemy.coordinationGroupId = assignment?.groupId || null;
+      enemy.coordinationGroupSize = assignment?.groupSize || 1;
+      enemy.coordinationPartnerId = assignment?.partnerId || null;
+      enemy.coordinationSlotAngle = assignment?.slotAngle ?? null;
+      if (roleChanged) {
+        enemy.path = [];
+        enemy.pathCooldown = 0;
       }
     }
   }
@@ -922,13 +948,29 @@ export class CrystalLabyrinthGame {
           enemy.pathCooldown = 0;
         }
         break;
-      case "chase":
-        if (enemy.pathCooldown <= 0) {
-          this.planEnemyPath(enemy, playerTile);
-          enemy.pathCooldown = enemy.type === "crawler" ? 0.28 : 0.42;
+      case "chase": {
+        const chasePlan = this.getEnemyChasePlan(enemy, playerTile);
+        if (chasePlan.hold) {
+          enemy.path = [];
+          enemy.pathIndex = 0;
+          enemy.facingAngle = rotateTowards(enemy.facingAngle, playerAngle, profile.turnRate * dt);
+          break;
         }
-        this.followEnemyPath(enemy, dt, profile.moveSpeed * difficulty.enemySpeedMultiplier);
+        if (enemy.pathCooldown <= 0) {
+          this.planEnemyPath(enemy, chasePlan.targetCell);
+          const baseCooldown = enemy.type === "crawler" ? 0.28 : 0.42;
+          enemy.pathCooldown = baseCooldown * (enemy.coordinationRole === "duo-reserve" ? 1.35 : 1);
+        }
+        this.followEnemyPath(
+          enemy,
+          dt,
+          profile.moveSpeed * difficulty.enemySpeedMultiplier * chasePlan.speedMultiplier,
+        );
+        if (chasePlan.facePlayerAtTarget && this.enemyReached(enemy, chasePlan.targetCell)) {
+          enemy.facingAngle = rotateTowards(enemy.facingAngle, playerAngle, profile.turnRate * dt);
+        }
         break;
+      }
       case "search":
         enemy.stateTimer -= dt;
         if (enemy.pathCooldown <= 0 && enemy.lastSeen) {
@@ -969,6 +1011,69 @@ export class CrystalLabyrinthGame {
       if (dx * dx + dy * dy <= radiusTiles * radiusTiles && dx * dx + dy * dy > 6) return { x: cell.x, y: cell.y };
     }
     return { ...enemy.home };
+  }
+
+  findNearestWalkableCell(target, fallback, maxRadius = 4) {
+    if (this.isTileWalkable(target.x, target.y)) return target;
+    for (let radius = 1; radius <= maxRadius; radius += 1) {
+      const candidates = [];
+      for (let offsetY = -radius; offsetY <= radius; offsetY += 1) {
+        for (let offsetX = -radius; offsetX <= radius; offsetX += 1) {
+          if (Math.max(Math.abs(offsetX), Math.abs(offsetY)) !== radius) continue;
+          const cell = { x: target.x + offsetX, y: target.y + offsetY };
+          if (this.isTileWalkable(cell.x, cell.y)) candidates.push(cell);
+        }
+      }
+      if (candidates.length > 0) {
+        return candidates.sort((left, right) =>
+          (left.x - target.x) ** 2 + (left.y - target.y) ** 2
+          - ((right.x - target.x) ** 2 + (right.y - target.y) ** 2)
+          || left.y - right.y
+          || left.x - right.x
+        )[0];
+      }
+    }
+    return fallback;
+  }
+
+  getEnemyChasePlan(enemy, playerTile) {
+    if (enemy.coordinationRole === "duo-reserve") {
+      let away = normalize(enemy.x - this.player.x, enemy.y - this.player.y);
+      if (away.length === 0) {
+        away = { x: Math.cos(enemy.facingAngle || 0), y: Math.sin(enemy.facingAngle || 0), length: 1 };
+      }
+      const holdDistance = ENEMY_COORDINATION.duoHoldDistanceTiles * TILE_SIZE;
+      const desired = {
+        x: Math.floor((this.player.x + away.x * holdDistance) / TILE_SIZE),
+        y: Math.floor((this.player.y + away.y * holdDistance) / TILE_SIZE),
+      };
+      const targetCell = this.findNearestWalkableCell(desired, worldToTile(enemy));
+      return {
+        targetCell,
+        speedMultiplier: ENEMY_COORDINATION.duoReserveSpeedMultiplier,
+        hold: this.enemyReached(enemy, targetCell),
+        facePlayerAtTarget: true,
+      };
+    }
+
+    if (enemy.coordinationRole === "pack-flanker" && Number.isFinite(enemy.coordinationSlotAngle)) {
+      const leadDistance = this.player.moving ? TILE_SIZE * 0.8 : 0;
+      const centerX = this.player.x + this.player.facingVector.x * leadDistance;
+      const centerY = this.player.y + this.player.facingVector.y * leadDistance;
+      const flankDistance = ENEMY_COORDINATION.packFlankDistanceTiles * TILE_SIZE;
+      const desired = {
+        x: Math.floor((centerX + Math.cos(enemy.coordinationSlotAngle) * flankDistance) / TILE_SIZE),
+        y: Math.floor((centerY + Math.sin(enemy.coordinationSlotAngle) * flankDistance) / TILE_SIZE),
+      };
+      return {
+        targetCell: this.findNearestWalkableCell(desired, playerTile),
+        speedMultiplier: ENEMY_COORDINATION.packFlankSpeedMultiplier,
+        hold: false,
+        facePlayerAtTarget: true,
+      };
+    }
+
+    return { targetCell: playerTile, speedMultiplier: 1, hold: false, facePlayerAtTarget: false };
   }
 
   planEnemyPath(enemy, targetCell) {
@@ -1014,6 +1119,7 @@ export class CrystalLabyrinthGame {
     this.player.invulnerability = PLAYER_DEFAULTS.invulnerabilitySeconds;
     this.damageFlash = 1;
     enemy.contactCooldown = 1.1;
+    this.advanceDuoAttack(enemy);
     this.cancelDoorActivation();
 
     const separation = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
@@ -1032,6 +1138,26 @@ export class CrystalLabyrinthGame {
     this.showToast(beforeShards > 0 ? "Life lost — and one carried shard shattered." : "Life lost — move while your light is protected!", 2.2);
 
     if (this.player.lives <= 0) this.fullDeath();
+  }
+
+  advanceDuoAttack(attacker) {
+    if (attacker.coordinationMode !== "duo" || attacker.coordinationRole !== "duo-striker") return;
+    const partner = this.enemies.find((enemy) =>
+      !enemy.dead &&
+      String(enemy.id) === attacker.coordinationPartnerId &&
+      enemy.coordinationGroupId === attacker.coordinationGroupId
+    );
+    if (!partner) return;
+
+    attacker.coordinationRole = "duo-reserve";
+    attacker.coordinationPartnerId = String(partner.id);
+    attacker.path = [];
+    attacker.pathCooldown = 0;
+    partner.coordinationMode = "duo";
+    partner.coordinationRole = "duo-striker";
+    partner.coordinationPartnerId = String(attacker.id);
+    partner.path = [];
+    partner.pathCooldown = 0;
   }
 
   fullDeath() {
@@ -1225,19 +1351,27 @@ export class CrystalLabyrinthGame {
     this.dom.levelNumber.textContent = String(this.levelId);
     this.dom.difficultyLabel.textContent = DIFFICULTY_CONFIG[this.difficultyId].label;
     this.dom.difficultyLabel.dataset.difficulty = this.difficultyId;
-    this.dom.livesDisplay.setAttribute("aria-label", `${this.player.lives} ${this.player.lives === 1 ? "life" : "lives"}`);
+    const hasHalfLife = this.player.healProgress === 1;
+    const halfLifeSlot = this.player.lives < this.player.maxLives ? this.player.lives : -1;
+    const storedPastFullLives = hasHalfLife && halfLifeSlot === -1;
+    const livesLabel = hasHalfLife
+      ? (storedPastFullLives
+          ? `${this.player.lives} lives, one Half Heart stored`
+          : `${this.player.lives} and a half lives`)
+      : `${this.player.lives} ${this.player.lives === 1 ? "life" : "lives"}`;
+    this.dom.livesDisplay.setAttribute("aria-label", livesLabel);
 
     this.dom.hearts.forEach((heart, index) => {
       const full = index < this.player.lives;
+      const half = hasHalfLife && index === halfLifeSlot;
       heart.classList.toggle("is-full", full);
-      heart.classList.toggle("is-empty", !full);
-      heart.textContent = full ? "♥" : "♡";
+      heart.classList.toggle("is-half", half);
+      heart.classList.toggle("is-empty", !full && !half);
+      heart.textContent = full || half ? "♥" : "♡";
     });
 
-    this.dom.healProgressText.textContent = `${this.player.healProgress}/2`;
-    this.dom.healProgress.style.setProperty("--progress", `${this.player.healProgress * 50}%`);
-    this.dom.healPanel.setAttribute("aria-label", `Healing charge ${this.player.healProgress} of 2 halves`);
-    this.dom.healMeter.setAttribute("aria-valuenow", String(this.player.healProgress));
+    this.dom.storedHalfHeart.hidden = !storedPastFullLives;
+    this.dom.storedHalfHeart.classList.toggle("is-half", storedPastFullLives);
 
     this.dom.hotbarButtons.forEach((button, index) => {
       const item = this.player.hotbar[index];
