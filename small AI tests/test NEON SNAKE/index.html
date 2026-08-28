@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Neon Snake — a fast, responsive JavaScript arcade game.">
+  <title>Neon Snake</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Neon Snake">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>NEON SNAKE</span>
+      </div>
+
+      <div class="top-actions">
+        <label class="difficulty-label" for="difficulty">Speed</label>
+        <select id="difficulty" aria-label="Game speed">
+          <option value="150">Chill</option>
+          <option value="105" selected>Classic</option>
+          <option value="72">Turbo</option>
+        </select>
+        <button id="soundButton" class="icon-button" type="button" aria-label="Mute sound" aria-pressed="false">
+          <svg class="sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6.8 8.5H3v7h3.8L11 19V5Zm4.2 3.1a5.5 5.5 0 0 1 0 7.8M17.8 5.5a9 9 0 0 1 0 13"/></svg>
+          <svg class="sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6.8 8.5H3v7h3.8L11 19V5Zm5 4 5 5m0-5-5 5"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="scoreboard" aria-label="Game statistics">
+      <div class="stat">
+        <span class="stat-label">Score</span>
+        <strong id="score">000</strong>
+      </div>
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span id="statusText">Ready</span>
+      </div>
+      <div class="stat stat-right">
+        <span class="stat-label">Best</span>
+        <strong id="bestScore">000</strong>
+      </div>
+    </section>
+
+    <section class="game-card">
+      <canvas id="gameCanvas" width="600" height="600" aria-label="Snake game board"></canvas>
+
+      <div id="startOverlay" class="overlay">
+        <div class="overlay-icon" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <p class="eyebrow">ARCADE MODE</p>
+        <h1>Ready to glow?</h1>
+        <p class="overlay-copy">Eat the pixels. Grow your trail.<br>Don't hit the walls—or yourself.</p>
+        <button id="startButton" class="primary-button" type="button">Start game <span aria-hidden="true">→</span></button>
+        <p class="key-hint"><kbd>WASD</kbd> or <kbd>ARROWS</kbd> to move</p>
+      </div>
+
+      <div id="gameOverOverlay" class="overlay hidden">
+        <p class="eyebrow">RUN COMPLETE</p>
+        <h2>Game over</h2>
+        <div class="final-score"><span>Score</span><strong id="finalScore">000</strong></div>
+        <p id="resultMessage" class="overlay-copy">Nice run. Ready for another?</p>
+        <button id="restartButton" class="primary-button" type="button">Play again <span aria-hidden="true">↻</span></button>
+      </div>
+
+      <div id="pauseOverlay" class="pause-overlay hidden">
+        <span class="pause-symbol" aria-hidden="true">Ⅱ</span>
+        <strong>Paused</strong>
+        <span>Press space to continue</span>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="Game controls">
+      <div class="desktop-controls">
+        <span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> Move</span>
+        <span><kbd>SPACE</kbd> Pause</span>
+        <span><kbd>R</kbd> Restart</span>
+      </div>
+
+      <div class="mobile-controls" aria-label="Touch direction controls">
+        <button class="dpad up" data-direction="up" type="button" aria-label="Move up">↑</button>
+        <button class="dpad left" data-direction="left" type="button" aria-label="Move left">←</button>
+        <button class="dpad down" data-direction="down" type="button" aria-label="Move down">↓</button>
+        <button class="dpad right" data-direction="right" type="button" aria-label="Move right">→</button>
+      </div>
+    </section>
+
+    <footer>Built with vanilla JavaScript <span aria-hidden="true">•</span> No downloads, just play</footer>
+  </main>
+
+  <script src="java.js"></script>
+</body>
+</html>
