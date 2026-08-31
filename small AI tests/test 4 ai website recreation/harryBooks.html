@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Parcourez les huit livres de la collection Harry Potter.">
+  <title>Livres — HarryHub</title>
+  <link rel="icon" href="assets/images/logo.png" type="image/png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="js/i18n.js" defer></script>
+  <script src="js/app.js" defer></script>
+  <script src="js/data.js" defer></script>
+  <script src="js/books.js" defer></script>
+</head>
+<body data-page="books" data-audio="assets/audio/books.mp3">
+  <a class="skip-link" href="#contenu">Aller au contenu</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation"><span class="menu-icon" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only">Ouvrir le menu</span></button>
+      <a class="brand" href="index.html" aria-label="HarryHub — Accueil"><img src="assets/images/logo.png" alt="Harry Potter" width="180" height="65"></a>
+      <nav class="site-nav" id="primary-navigation" aria-label="Navigation principale"><a href="index.html">Accueil</a><a href="harryCharacters.html">Personnages</a><a href="harryBooks.html" aria-current="page">Livres</a><a href="harryUpcoming.html">À venir</a></nav>
+      <button class="audio-toggle" type="button" aria-pressed="false"><span class="audio-icon" aria-hidden="true">♪</span><span class="audio-label">Écouter</span></button>
+    </div>
+  </header>
+
+  <main id="contenu">
+    <section class="page-hero books-hero" aria-labelledby="page-title">
+      <div class="page-hero-content">
+        <p class="eyebrow">Découvrez le monde des sorciers</p>
+        <h1 id="page-title">Livres</h1>
+        <p>Sept romans ont accompagné des millions de lecteurs à Poudlard, puis une pièce a prolongé l’histoire d’une nouvelle génération.</p>
+      </div>
+    </section>
+
+    <section class="books-intro" aria-labelledby="books-intro-title">
+      <p class="eyebrow">La collection</p>
+      <h2 id="books-intro-title">Une aventure en huit volumes</h2>
+      <p>Le premier livre, <cite>Harry Potter à l’école des sorciers</cite>, paraît chez Bloomsbury en 1997 et rencontre un succès immédiat. La série est aujourd’hui traduite dans plus de 80 langues et compte parmi les sagas littéraires les plus lues au monde.</p>
+    </section>
+    <section class="book-catalog" aria-label="Liste des livres">
+      <div class="book-list" id="book-list"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-skyline" aria-hidden="true"></div>
+    <div class="footer-inner"><a class="footer-brand" href="index.html">HarryHub</a><nav aria-label="Navigation de pied de page"><a href="index.html">Accueil</a><a href="harryCharacters.html">Personnages</a><a href="harryBooks.html">Livres</a><a href="harryUpcoming.html">À venir</a></nav><p>Projet hommage non officiel, conçu à des fins éducatives.</p></div>
+  </footer>
+</body>
+</html>

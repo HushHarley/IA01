@@ -1408,33 +1408,11 @@ export class Renderer {
 
     const { ctx } = this;
     const pulse = game.reducedMotion ? 0 : Math.sin(game.time * 4.2);
-    const drift = game.reducedMotion ? 0 : Math.sin(game.time * 2.8) * 1.5;
     ctx.save();
     ctx.translate(beacon.x, beacon.y);
-    ctx.rotate(beacon.angle);
     ctx.globalCompositeOperation = "lighter";
-    this.paintGlow(ctx, 0, 0, 22 + pulse * 3, COLORS.violet, 0.3 + pulse * 0.045);
-
-    ctx.translate(drift, 0);
-    ctx.shadowColor = COLORS.violet;
-    ctx.shadowBlur = 9;
-    ctx.fillStyle = "rgba(217, 131, 255, 0.9)";
-    ctx.beginPath();
-    ctx.moveTo(9, 0);
-    ctx.lineTo(-4, -5);
-    ctx.lineTo(-1, 0);
-    ctx.lineTo(-4, 5);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.shadowBlur = 5;
-    ctx.fillStyle = "#fff0ff";
-    ctx.fillRect(2, -1, 4, 2);
-    ctx.globalAlpha = 0.46;
-    ctx.fillStyle = COLORS.violet;
-    ctx.fillRect(-10, -1, 3, 2);
-    ctx.globalAlpha = 0.24;
-    ctx.fillRect(-17, -1, 2, 2);
+    this.paintGlow(ctx, 0, 0, 27 + pulse * 2.5, COLORS.violet, 0.16 + pulse * 0.025);
+    this.paintGlow(ctx, 0, 0, 11 + pulse, "#d983ff", 0.1 + pulse * 0.015);
     ctx.restore();
   }
 

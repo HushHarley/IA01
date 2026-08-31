@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explorez l’histoire, les personnages et les livres du monde de Harry Potter.">
+  <title>HarryHub — Le monde de Harry Potter</title>
+  <link rel="icon" href="assets/images/logo.png" type="image/png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="js/i18n.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body data-page="home" data-audio="assets/audio/home.mp3">
+  <a class="skip-link" href="#contenu">Aller au contenu</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">
+        <span class="menu-icon" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="sr-only">Ouvrir le menu</span>
+      </button>
+      <a class="brand" href="index.html" aria-label="HarryHub — Accueil">
+        <img src="assets/images/logo.png" alt="Harry Potter" width="180" height="65">
+      </a>
+      <nav class="site-nav" id="primary-navigation" aria-label="Navigation principale">
+        <a href="index.html" aria-current="page">Accueil</a>
+        <a href="harryCharacters.html">Personnages</a>
+        <a href="harryBooks.html">Livres</a>
+        <a href="harryUpcoming.html">À venir</a>
+      </nav>
+      <button class="audio-toggle" type="button" aria-pressed="false">
+        <span class="audio-icon" aria-hidden="true">♪</span>
+        <span class="audio-label">Écouter</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="contenu">
+    <section class="hero hero-home" aria-labelledby="hero-title">
+      <div class="hero-content">
+        <p class="eyebrow">Découvrez le monde des sorciers</p>
+        <h1 id="hero-title">Le monde de<br>Harry Potter</h1>
+        <p class="hero-intro">Une histoire d’amitié, de choix et de courage, cachée juste au-delà du quai neuf trois quarts.</p>
+        <a class="button button-gold" href="harryCharacters.html">Rencontrer les personnages</a>
+      </div>
+      <span class="scroll-cue" aria-hidden="true">Défiler <b>↓</b></span>
+    </section>
+
+    <section class="intro-band" aria-label="Introduction">
+      <p class="eyebrow">Bienvenue à HarryHub</p>
+      <h2>Entrez dans le monde magique</h2>
+      <p>Retrouvez les repères essentiels de la saga, ses figures marquantes et les huit ouvrages qui composent l’aventure publiée.</p>
+    </section>
+
+    <section class="story-section" aria-labelledby="qui-est-harry">
+      <div class="story-copy">
+        <span class="section-number" aria-hidden="true">01</span>
+        <p class="eyebrow">Le garçon qui a survécu</p>
+        <h2 id="qui-est-harry">Qui est Harry Potter&nbsp;?</h2>
+        <p>Harry Potter est un garçon orphelin qui découvre, le jour de ses onze ans, qu’il est un sorcier. Élevé par sa tante et son oncle dans le monde ordinaire des Moldus, il ignore tout de son héritage magique jusqu’à son invitation à l’école de sorcellerie Poudlard.</p>
+        <p>Dans le monde des sorciers, il est déjà célèbre pour avoir survécu, alors qu’il était bébé, à une attaque de Lord Voldemort. L’événement lui a laissé une cicatrice en forme d’éclair et une étrange connexion avec son ennemi.</p>
+      </div>
+      <figure class="story-media portrait-media">
+        <img src="assets/images/home-harry.jpg" alt="Harry Potter dans les couloirs de Poudlard" loading="lazy">
+      </figure>
+    </section>
+
+    <section class="story-section story-reverse" aria-labelledby="lieux-histoire">
+      <div class="story-copy">
+        <span class="section-number" aria-hidden="true">02</span>
+        <p class="eyebrow">Un monde caché</p>
+        <h2 id="lieux-histoire">Où se déroule l’histoire&nbsp;?</h2>
+        <p>La série se déroule surtout dans une version secrète et magique de la Grande-Bretagne, parallèle au monde quotidien. Une grande partie de l’histoire prend place à Poudlard, un château-école rejoint depuis le quai neuf trois quarts de la gare de King’s Cross.</p>
+        <p>L’aventure s’étend aussi au Chemin de Traverse, au ministère de la Magie et à de nombreux lieux où la communauté sorcière tente de résister au retour de Voldemort.</p>
+      </div>
+      <figure class="story-media landscape-media">
+        <img src="assets/images/home-hogwarts.jpg" alt="Le château de Poudlard au bord du lac" loading="lazy">
+      </figure>
+    </section>
+
+    <section class="story-section" aria-labelledby="resume-complet">
+      <div class="story-copy">
+        <span class="section-number" aria-hidden="true">03</span>
+        <p class="eyebrow">Sept années à Poudlard</p>
+        <h2 id="resume-complet">Une aventure qui grandit avec ses héros</h2>
+        <p>Au fil des sept romans, Harry passe d’un élève de première année complètement perdu au personnage central de la lutte contre Voldemort. Avec Ron Weasley et Hermione Granger, il découvre des secrets liés à son passé et comprend peu à peu pourquoi le mage noir l’a pris pour cible.</p>
+        <p>La série mène à une guerre qui met à l’épreuve le courage, la loyauté et l’identité de chacun — tout en gardant l’amitié au cœur de l’histoire.</p>
+        <a class="text-link" href="harryBooks.html">Parcourir tous les livres <span aria-hidden="true">→</span></a>
+      </div>
+      <figure class="story-media landscape-media">
+        <img src="assets/images/home-trio.jpg" alt="Des élèves face au château de Poudlard" loading="lazy">
+      </figure>
+    </section>
+
+    <section class="explore-banner" aria-labelledby="explore-title">
+      <div>
+        <p class="eyebrow">Poursuivez l’exploration</p>
+        <h2 id="explore-title">Chaque nom cache une histoire</h2>
+      </div>
+      <a class="button button-outline" href="harryCharacters.html">Voir les 25 personnages</a>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-skyline" aria-hidden="true"></div>
+    <div class="footer-inner">
+      <a class="footer-brand" href="index.html">HarryHub</a>
+      <nav aria-label="Navigation de pied de page">
+        <a href="index.html">Accueil</a>
+        <a href="harryCharacters.html">Personnages</a>
+        <a href="harryBooks.html">Livres</a>
+        <a href="harryUpcoming.html">À venir</a>
+      </nav>
+      <p>Projet hommage non officiel, conçu à des fins éducatives.</p>
+    </div>
+  </footer>
+</body>
+</html>

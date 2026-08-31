@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Inscrivez-vous aux nouvelles de HarryHub.">
+  <title>À venir — HarryHub</title>
+  <link rel="icon" href="assets/images/logo.png" type="image/png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="js/i18n.js" defer></script>
+  <script src="js/app.js" defer></script>
+  <script src="js/signup.js" defer></script>
+</head>
+<body data-page="upcoming" data-audio="assets/audio/upcoming.mp3">
+  <a class="skip-link" href="#contenu">Aller au contenu</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation"><span class="menu-icon" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only">Ouvrir le menu</span></button>
+      <a class="brand" href="index.html" aria-label="HarryHub — Accueil"><img src="assets/images/logo.png" alt="Harry Potter" width="180" height="65"></a>
+      <nav class="site-nav" id="primary-navigation" aria-label="Navigation principale"><a href="index.html">Accueil</a><a href="harryCharacters.html">Personnages</a><a href="harryBooks.html">Livres</a><a href="harryUpcoming.html" aria-current="page">À venir</a></nav>
+      <button class="audio-toggle" type="button" aria-pressed="false"><span class="audio-icon" aria-hidden="true">♪</span><span class="audio-label">Écouter</span></button>
+    </div>
+  </header>
+
+  <main id="contenu">
+    <section class="page-hero upcoming-hero" aria-labelledby="page-title">
+      <div class="page-hero-content">
+        <p class="eyebrow">Le Courrier des hiboux</p>
+        <h1 id="page-title">Restez au courant</h1>
+        <p>Créez votre profil HarryHub et choisissez les nouvelles du monde des sorciers que vous souhaitez recevoir.</p>
+      </div>
+    </section>
+
+    <section class="signup-section" aria-labelledby="signup-title">
+      <div class="signup-copy">
+        <p class="eyebrow">Votre invitation</p>
+        <h2 id="signup-title">Rejoignez le cercle</h2>
+        <p>Films, romans et découvertes du monde magique&nbsp;: sélectionnez vos sujets préférés. Ce formulaire de démonstration fonctionne entièrement dans votre navigateur et n’envoie aucune donnée.</p>
+        <ul class="feature-list">
+          <li><span aria-hidden="true">✦</span> Préférences personnalisées</li>
+          <li><span aria-hidden="true">✦</span> Validation claire et instantanée</li>
+          <li><span aria-hidden="true">✦</span> Aucune donnée transmise</li>
+        </ul>
+      </div>
+
+      <div class="signup-card">
+        <form id="signup-form" novalidate>
+          <div class="form-heading"><span class="wax-seal" aria-hidden="true">H</span><div><p class="eyebrow">Formulaire d’inscription</p><h3>Vos coordonnées</h3></div></div>
+
+          <div class="field-group">
+            <label for="name">Nom complet <span aria-hidden="true">*</span></label>
+            <input id="name" name="name" type="text" autocomplete="name" required aria-describedby="name-error" placeholder="Ex. Luna Lovegood">
+            <span class="field-error" id="name-error"></span>
+          </div>
+          <div class="field-group">
+            <label for="email">Courriel <span aria-hidden="true">*</span></label>
+            <input id="email" name="email" type="email" autocomplete="email" required aria-describedby="email-error" placeholder="hibou@exemple.ca">
+            <span class="field-error" id="email-error"></span>
+          </div>
+          <div class="field-group">
+            <label for="phone">Cellulaire <span class="optional">Facultatif</span></label>
+            <input id="phone" name="phone" type="tel" autocomplete="tel" aria-describedby="phone-error" placeholder="514 555-0123">
+            <span class="field-error" id="phone-error"></span>
+          </div>
+          <div class="field-group">
+            <label for="password">Mot de passe <span aria-hidden="true">*</span></label>
+            <div class="password-field"><input id="password" name="password" type="password" autocomplete="new-password" required minlength="8" aria-describedby="password-hint password-error" placeholder="8 caractères minimum"><button class="show-password" type="button" aria-label="Afficher le mot de passe">Afficher</button></div>
+            <span class="field-hint" id="password-hint">Utilisez au moins 8 caractères.</span>
+            <span class="field-error" id="password-error"></span>
+          </div>
+
+          <fieldset class="interest-group" aria-describedby="interests-error">
+            <legend>Les nouvelles qui vous intéressent <span aria-hidden="true">*</span></legend>
+            <label class="check-card"><input type="checkbox" name="interests" value="films"><span><b>Films et séries</b><small>Annonces, bandes-annonces et coulisses</small></span></label>
+            <label class="check-card"><input type="checkbox" name="interests" value="books"><span><b>Livres et histoires</b><small>Nouvelles éditions et monde littéraire</small></span></label>
+            <span class="field-error" id="interests-error"></span>
+          </fieldset>
+
+          <div class="form-actions"><button class="button button-gold" type="submit">Créer mon profil</button><button class="button button-quiet" type="reset">Effacer</button></div>
+          <p class="form-status" id="form-status" role="status" tabindex="-1"></p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-skyline" aria-hidden="true"></div>
+    <div class="footer-inner"><a class="footer-brand" href="index.html">HarryHub</a><nav aria-label="Navigation de pied de page"><a href="index.html">Accueil</a><a href="harryCharacters.html">Personnages</a><a href="harryBooks.html">Livres</a><a href="harryUpcoming.html">À venir</a></nav><p>Projet hommage non officiel, conçu à des fins éducatives.</p></div>
+  </footer>
+</body>
+</html>
