@@ -12,9 +12,17 @@ import {
   planEnemyCoordination,
 } from "../js/enemy-coordination.js";
 import { InputManager } from "../js/input.js";
+import {
+  DEFAULT_LASER_FOCUS_ID,
+  LASER_FOCUS_TYPES,
+} from "../js/laser-focus.js";
 import { generateMaze, validateMaze } from "../js/maze.js";
 import { findPath, hasLineOfSight } from "../js/pathfinding.js";
-import { getWallAtlasTransform, getWallTileStyle } from "../js/renderer.js";
+import {
+  getEdgeBeaconPosition,
+  getWallAtlasTransform,
+  getWallTileStyle,
+} from "../js/renderer.js";
 import { hash2D } from "../js/utils.js";
 
 assert.deepEqual(
@@ -29,6 +37,30 @@ assert.deepEqual(
 );
 assert.ok(RULES.crystalRespawn.emergencySeconds < RULES.crystalRespawn.regularSeconds, "Emergency recovery must beat the normal shard timer.");
 assert.notEqual(hash2D(4, 7, "cave-alpha"), hash2D(4, 7, "cave-beta"), "String seeds should produce distinct visual variation.");
+assert.deepEqual(
+  {
+    standard: {
+      damage: LASER_FOCUS_TYPES.standard.damage,
+      shardCost: LASER_FOCUS_TYPES.standard.shardCost,
+      chargeTime: LASER_FOCUS_TYPES.standard.chargeTime,
+    },
+    heavy: {
+      damage: LASER_FOCUS_TYPES.heavy.damage,
+      shardCost: LASER_FOCUS_TYPES.heavy.shardCost,
+      chargeTime: LASER_FOCUS_TYPES.heavy.chargeTime,
+    },
+  },
+  {
+    standard: { damage: 1, shardCost: 1, chargeTime: 0 },
+    heavy: { damage: 2, shardCost: 1, chargeTime: 0.85 },
+  },
+  "Focus definitions should encode the intended tactical tradeoff in one data source.",
+);
+for (const focus of Object.values(LASER_FOCUS_TYPES)) {
+  for (const field of ["damage", "shardCost", "chargeTime", "fireCooldown", "range", "beamWidth", "projectileSpeed"]) {
+    assert.equal(Number.isFinite(focus[field]), true, `${focus.name} should define numeric ${field}.`);
+  }
+}
 
 function wallStyleWithFloors(floors) {
   const tiles = Array.from({ length: 3 }, () => Array(3).fill(0));
@@ -73,6 +105,24 @@ assert.deepEqual(
   { quarterTurns: 0, flipX: false },
   "Cave void should not receive a wall-lighting transform.",
 );
+
+const beaconSource = { x: VIEWPORT.width / 2, y: VIEWPORT.height / 2 };
+assert.deepEqual(
+  getEdgeBeaconPosition(beaconSource, { x: 2000, y: beaconSource.y }),
+  { x: VIEWPORT.width - 26, y: beaconSource.y, angle: 0 },
+  "A door to the east should place its beacon on the right edge.",
+);
+assert.deepEqual(
+  getEdgeBeaconPosition(beaconSource, { x: beaconSource.x, y: -1000 }),
+  { x: beaconSource.x, y: 26, angle: -Math.PI / 2 },
+  "A door to the north should place its beacon on the top edge.",
+);
+const cornerBeacon = getEdgeBeaconPosition(beaconSource, {
+  x: beaconSource.x + (VIEWPORT.width / 2 - 26) * 2,
+  y: beaconSource.y - (VIEWPORT.height / 2 - 26) * 2,
+});
+assert.ok(Math.abs(cornerBeacon.x - (VIEWPORT.width - 26)) < 1e-9);
+assert.ok(Math.abs(cornerBeacon.y - 26) < 1e-9, "Diagonal door directions should carry the beacon smoothly through a viewport corner.");
 
 const makeChaser = (id, x, y, overrides = {}) => ({
   id,
@@ -157,6 +207,27 @@ repeatInput.reset();
 repeatInput._onKeyDown(keyEvent(true));
 assert.equal(repeatInput.wasPressed("pause"), false, "A held Escape repeat must not undo a pause-state reset.");
 
+const focusInput = new InputManager({ autoAttach: false });
+const controlEvent = (code, key = code, extra = {}) => ({
+  code,
+  key,
+  repeat: false,
+  cancelable: true,
+  isComposing: false,
+  ctrlKey: false,
+  metaKey: false,
+  altKey: false,
+  target: null,
+  preventDefault() {},
+  ...extra,
+});
+focusInput._onKeyDown(controlEvent("Tab", "Tab"));
+focusInput._onKeyDown(controlEvent("Digit2", "2"));
+assert.equal(focusInput.consumeFocusSelection(), 1, "Holding Tab should route number keys to the Laser Focus library.");
+assert.equal(focusInput.consumeSlotSelection(), null, "Tab-modified number keys must not change item selection.");
+focusInput._onWheel(controlEvent("Wheel", "Wheel", { deltaY: 1, deltaX: 0 }));
+assert.deepEqual(focusInput.consumeHotbarCommand(), { type: "cycle", direction: 1 }, "Mouse wheel should remain exclusive to the item hotbar while Tab is held.");
+
 let generatedCount = 0;
 for (const level of [1, 2, 3]) {
   for (const difficulty of Object.keys(DIFFICULTY_CONFIG)) {
@@ -184,6 +255,10 @@ for (const level of [1, 2, 3]) {
       }, 0);
       assert.ok(totalShardValue >= RULES.shardGoal + 7, "Each map needs objective shards plus usable ammunition.");
       assert.ok(population.pickups.some((pickup) => pickup.kind === "half-heart"), "Each map should have a Half Heart.");
+      const focusPickups = population.pickups.filter((pickup) => pickup.kind === "laser-focus");
+      assert.equal(focusPickups.length, 1, "Each procedural labyrinth should hide one rare Focus Chamber.");
+      assert.equal(focusPickups[0].focusId, "heavy", "The first discoverable chamber should contain Heavy Focus.");
+      assert.ok(world.rooms.some((room) => room.id === focusPickups[0].roomId), "A focus altar should be anchored to generated room metadata.");
       const expectedEnemies = Math.max(5, Math.round((5 + level * 3.4) * DIFFICULTY_CONFIG[difficulty].enemyDensityMultiplier));
       assert.ok(population.enemies.length >= expectedEnemies, "Each map should meet its configured enemy pressure.");
       if (level > 1) assert.ok(population.enemies.some((enemy) => enemy.type === "brute"), "Deeper maps should include a Brute.");
@@ -192,6 +267,14 @@ for (const level of [1, 2, 3]) {
       assert.equal(player.lives, 3);
       assert.equal(player.shards, 0);
       assert.deepEqual(player.hotbar, Array(6).fill(null));
+      assert.deepEqual(player.laserFocusIds, [DEFAULT_LASER_FOCUS_ID]);
+      assert.equal(player.equippedFocusId, DEFAULT_LASER_FOCUS_ID);
+      const carriedFocusPlayer = createPlayer(world.spawn, {
+        laserFocusIds: [DEFAULT_LASER_FOCUS_ID, "heavy"],
+        equippedFocusId: "heavy",
+      });
+      assert.deepEqual(carriedFocusPlayer.laserFocusIds, ["standard", "heavy"]);
+      assert.equal(carriedFocusPlayer.equippedFocusId, "heavy");
       generatedCount += 1;
     }
   }

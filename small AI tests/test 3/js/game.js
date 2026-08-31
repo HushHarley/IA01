@@ -18,6 +18,12 @@ import {
   planEnemyCoordination,
 } from "./enemy-coordination.js";
 import { InputManager } from "./input.js";
+import {
+  DEFAULT_LASER_FOCUS_ID,
+  getLaserFocus,
+  isSpecialLaserFocus,
+  normalizeLaserFocusIds,
+} from "./laser-focus.js";
 import { generateMaze, SeededRNG } from "./maze.js";
 import { findPath, hasLineOfSight } from "./pathfinding.js";
 import { Renderer } from "./renderer.js";
@@ -39,6 +45,7 @@ const GAME_STATES = Object.freeze({
   COMPLETE: "complete",
   VICTORY: "victory",
   EXIT: "exit",
+  FOCUS_CHOICE: "focus-choice",
 });
 
 const FACING_VECTORS = Object.freeze({
@@ -54,6 +61,7 @@ const MODAL_IDS = [
   "levelCompleteOverlay",
   "winOverlay",
   "exitOverlay",
+  "focusSwapOverlay",
 ];
 
 function byId(id) {
@@ -103,6 +111,7 @@ export class CrystalLabyrinthGame {
     this.runTime = 0;
     this.totalShardsCollected = 0;
     this.pendingContinuation = null;
+    this.pendingFocusChoice = null;
     this.nightmareResetRequired = false;
     this.lastResonanceAt = -Infinity;
     this.damageFlash = 0;
@@ -129,6 +138,9 @@ export class CrystalLabyrinthGame {
       "playButton", "exitButton", "audioToggle", "motionToggle", "pauseButton",
       "livesDisplay", "livesHearts", "shardCount", "shardGoal", "levelNumber",
       "difficultyLabel", "storedHalfHeart",
+      "laserFocusSlot", "laserFocusGlyph", "laserFocusName", "focusChargeTrack",
+      "focusChargeFill", "focusPicker", "focusSwapName", "focusSwapDescription",
+      "equipFocusButton", "keepFocusButton",
       "controlHintKey", "controlHintText", "gameMessage", "gameMessageIcon",
       "gameMessageText", "toast", "toastText", "levelHint", "resumeButton",
       "restartLevelButton", "pauseMenuButton", "retryButton", "deathMenuButton",
@@ -183,6 +195,8 @@ export class CrystalLabyrinthGame {
     this.dom.winMenuButton.addEventListener("click", () => this.showMenu());
     this.dom.cancelExitButton.addEventListener("click", () => this.closeExit());
     this.dom.confirmExitButton.addEventListener("click", () => this.confirmExit());
+    this.dom.equipFocusButton.addEventListener("click", () => this.resolveFocusChoice(true));
+    this.dom.keepFocusButton.addEventListener("click", () => this.resolveFocusChoice(false));
 
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && this.state === GAME_STATES.PLAYING) this.pause();
@@ -317,6 +331,8 @@ export class CrystalLabyrinthGame {
   }
 
   showMenu() {
+    this.cancelLaserCharge();
+    this.pendingFocusChoice = null;
     this.state = GAME_STATES.MENU;
     this.dom.app.dataset.screen = "menu";
     this.dom.menuScreen.hidden = false;
@@ -363,6 +379,7 @@ export class CrystalLabyrinthGame {
     this.crystalEmergencyNotice = false;
     this.projectiles = [];
     this.particles = [];
+    this.pendingFocusChoice = null;
 
     const randomPart = Math.floor(Math.random() * 0xffffffff).toString(36);
     this.seed = `${Date.now().toString(36)}-${randomPart}-L${this.levelId}-${this.difficultyId}`;
@@ -370,7 +387,9 @@ export class CrystalLabyrinthGame {
     this.rng = new SeededRNG(`${this.seed}:runtime`);
     this.player = createPlayer(this.world.spawn, carry || {});
     const population = populateWorld(this.world, this.levelId, this.difficultyId, this.seed);
-    this.pickups = population.pickups;
+    this.pickups = population.pickups.filter(
+      (pickup) => pickup.kind !== "laser-focus" || !this.player.laserFocusIds.includes(pickup.focusId),
+    );
     this.enemies = population.enemies;
     this.door = {
       x: this.world.door.worldX,
@@ -431,6 +450,7 @@ export class CrystalLabyrinthGame {
     this.player.invulnerability = Math.max(0, this.player.invulnerability - dt);
     this.player.fireCooldown = Math.max(0, this.player.fireCooldown - dt);
 
+    this.handleLaserFocusInput();
     this.handleHotbarInput();
     this.updatePlayer(dt);
     this.updateDoor(dt);
@@ -467,6 +487,31 @@ export class CrystalLabyrinthGame {
     if (this.input.wasPressed("useItem")) this.useSelectedItem();
   }
 
+  handleLaserFocusInput() {
+    let focusIndex = this.input.consumeFocusSelection();
+    while (focusIndex !== null) {
+      const focusId = this.player.laserFocusIds[focusIndex];
+      if (!focusId) {
+        this.audio.locked({ volume: 0.22, pitch: 5 });
+        this.showToast(`No Laser Focus is attuned to Tab + ${focusIndex + 1}.`, 1.5);
+      } else {
+        this.equipLaserFocus(focusId);
+      }
+      focusIndex = this.input.consumeFocusSelection();
+    }
+  }
+
+  equipLaserFocus(focusId) {
+    if (!this.player.laserFocusIds.includes(focusId) || this.player.equippedFocusId === focusId) return false;
+    this.cancelLaserCharge();
+    this.player.equippedFocusId = focusId;
+    const focus = getLaserFocus(focusId);
+    this.audio.ui({ volume: 0.5, pitch: focus.damage > 1 ? -2 : 4 });
+    this.showToast(`${focus.name} equipped.`, 1.5);
+    this.updateHud();
+    return true;
+  }
+
   updatePlayer(dt) {
     const movement = this.input.getMovement();
     this.player.previousX = this.player.x;
@@ -488,10 +533,13 @@ export class CrystalLabyrinthGame {
     }
 
     if (this.input.wasPressed("action")) this.performContextAction();
+    if (this.player.focusCharging && !this.input.isHeld("action")) this.releaseLaserCharge();
+    else this.updateLaserCharge(dt);
   }
 
   performContextAction() {
     if (this.canInteractWithDoor()) {
+      this.cancelLaserCharge();
       if (this.player.shards < RULES.shardGoal) {
         this.door.activating = false;
         this.door.progress = 0;
@@ -505,30 +553,131 @@ export class CrystalLabyrinthGame {
       }
       return;
     }
-    this.fireLaser();
+    const focus = this.getEquippedLaserFocus();
+    if (focus.chargeTime > 0) this.beginLaserCharge(focus);
+    else this.fireLaser(focus);
   }
 
-  fireLaser() {
+  getEquippedLaserFocus() {
+    return getLaserFocus(this.player?.equippedFocusId ?? DEFAULT_LASER_FOCUS_ID);
+  }
+
+  beginLaserCharge(focus = this.getEquippedLaserFocus()) {
     if (this.player.fireCooldown > 0) return;
-    if (this.player.shards < RULES.laserShardCost) {
+    if (this.player.shards < focus.shardCost) {
       this.audio.locked({ volume: 0.32, pitch: 3 });
       this.showToast("No crystal charge — find a shard to fire.", 1.8);
       return;
     }
+    this.player.focusCharging = true;
+    this.player.focusCharge = 0;
+    this.player.focusChargeReady = false;
+    this.player.chargingFocusId = focus.id;
+    this.player.focusChargeParticleTimer = 0;
+    this.player.focusChargeSoundStep = -1;
+  }
+
+  updateLaserCharge(dt) {
+    if (!this.player.focusCharging) return;
+    if (!this.input.isHeld("action")) {
+      this.cancelLaserCharge();
+      return;
+    }
+    const focus = getLaserFocus(this.player.chargingFocusId);
+    if (focus.chargeTime <= 0 || this.player.equippedFocusId !== focus.id) {
+      this.cancelLaserCharge();
+      return;
+    }
+
+    const previousRatio = this.player.focusCharge / focus.chargeTime;
+    this.player.focusCharge = Math.min(focus.chargeTime, this.player.focusCharge + dt);
+    const ratio = clamp(this.player.focusCharge / focus.chargeTime, 0, 1);
+    this.player.focusChargeParticleTimer -= dt;
+    if (this.player.focusChargeParticleTimer <= 0) {
+      const direction = this.player.facingVector;
+      const crystalX = this.player.x + direction.x * 15;
+      const crystalY = this.player.y + direction.y * 15;
+      this.emitParticles(crystalX, crystalY, focus.color, 1 + Math.floor(ratio * 2), true);
+      this.player.focusChargeParticleTimer = 0.14 - ratio * 0.075;
+    }
+
+    const soundStep = Math.min(4, Math.floor(ratio * 5));
+    if (soundStep > this.player.focusChargeSoundStep) {
+      this.player.focusChargeSoundStep = soundStep;
+      this.audio.charge({ volume: 0.22 + ratio * 0.18, pitch: soundStep * 2 });
+    }
+    if (previousRatio < 1 && ratio >= 1) {
+      this.player.focusChargeReady = true;
+      this.audio.chargeReady({ volume: 0.58 });
+      const direction = this.player.facingVector;
+      this.emitParticles(
+        this.player.x + direction.x * 16,
+        this.player.y + direction.y * 16,
+        focus.coreColor,
+        12,
+        true,
+      );
+    }
+  }
+
+  releaseLaserCharge() {
+    if (!this.player.focusCharging) return;
+    const focus = getLaserFocus(this.player.chargingFocusId);
+    const ready = this.player.focusCharge >= focus.chargeTime && focus.chargeTime > 0;
+    this.cancelLaserCharge();
+    if (ready) {
+      this.fireLaser(focus, { charged: true });
+    } else {
+      this.audio.locked({ volume: 0.16, pitch: 8 });
+      this.showToast(`${focus.name} needs a full charge.`, 1.25);
+    }
+  }
+
+  cancelLaserCharge() {
+    if (!this.player) return;
+    this.player.focusCharging = false;
+    this.player.focusCharge = 0;
+    this.player.focusChargeReady = false;
+    this.player.chargingFocusId = null;
+    this.player.focusChargeParticleTimer = 0;
+    this.player.focusChargeSoundStep = -1;
+  }
+
+  fireLaser(focus = this.getEquippedLaserFocus(), { charged = false } = {}) {
+    if (this.player.fireCooldown > 0) return false;
+    if (focus.chargeTime > 0 && !charged) return false;
+    if (this.player.shards < focus.shardCost) {
+      this.audio.locked({ volume: 0.32, pitch: 3 });
+      this.showToast("No crystal charge — find a shard to fire.", 1.8);
+      return false;
+    }
     const direction = this.player.facingVector;
-    this.player.shards -= RULES.laserShardCost;
-    this.player.fireCooldown = PLAYER_DEFAULTS.laserCooldownSeconds;
+    this.player.shards -= focus.shardCost;
+    this.player.fireCooldown = focus.fireCooldown;
     this.projectiles.push({
       x: this.player.x + direction.x * 18,
       y: this.player.y + direction.y * 18,
-      vx: direction.x * PLAYER_DEFAULTS.laserSpeed,
-      vy: direction.y * PLAYER_DEFAULTS.laserSpeed,
-      radius: 4,
-      life: PLAYER_DEFAULTS.laserLifetimeSeconds,
+      vx: direction.x * focus.projectileSpeed,
+      vy: direction.y * focus.projectileSpeed,
+      radius: Math.max(2, focus.beamWidth * 0.5),
+      life: focus.range / focus.projectileSpeed,
+      damage: focus.damage,
+      shardCost: focus.shardCost,
+      beamWidth: focus.beamWidth,
+      focusId: focus.id,
+      color: focus.color,
+      coreColor: focus.coreColor,
     });
-    this.audio.fire({ volume: 0.58 });
-    this.emitParticles(this.player.x + direction.x * 15, this.player.y + direction.y * 15, "#73f6ff", 5, true);
+    this.audio.fire({ volume: 0.52 + focus.damage * 0.13, pitch: focus.damage > 1 ? -5 : 0 });
+    this.emitParticles(
+      this.player.x + direction.x * 15,
+      this.player.y + direction.y * 15,
+      focus.color,
+      3 + focus.damage * 4,
+      true,
+    );
     if (this.door.activating) this.cancelDoorActivation();
+    return true;
   }
 
   updateProjectiles(dt) {
@@ -561,7 +710,7 @@ export class CrystalLabyrinthGame {
   }
 
   damageEnemy(enemy, projectile) {
-    enemy.health -= 1;
+    enemy.health -= Math.max(1, projectile.damage || 1);
     enemy.state = "chase";
     enemy.lastSeen = worldToTile(this.player);
     enemy.pathCooldown = 0;
@@ -579,7 +728,15 @@ export class CrystalLabyrinthGame {
 
   updatePickups() {
     for (const pickup of this.pickups) {
-      if (pickup.collected || distanceSquared(this.player, pickup) > 24 ** 2) continue;
+      const pickupDistance = distanceSquared(this.player, pickup);
+      if (pickup.kind === "laser-focus" && pickup.promptSuppressed && pickupDistance > 42 ** 2) {
+        pickup.promptSuppressed = false;
+      }
+      if (pickup.collected || pickupDistance > 24 ** 2) continue;
+      if (pickup.kind === "laser-focus") {
+        if (!pickup.promptSuppressed) this.collectLaserFocus(pickup);
+        continue;
+      }
       if (pickup.kind === "half-heart") {
         const emptySlot = this.player.hotbar.indexOf(null);
         if (emptySlot === -1) {
@@ -618,6 +775,67 @@ export class CrystalLabyrinthGame {
         this.showGameMessage("Resonance! The exit seal can now be awakened. Return to the crystal gate.", 5.5, "◆");
       }
     }
+  }
+
+  collectLaserFocus(pickup) {
+    const focus = getLaserFocus(pickup.focusId);
+    if (this.player.laserFocusIds.includes(focus.id)) {
+      pickup.collected = true;
+      this.showToast(`${focus.name} is already attuned.`, 1.5);
+      return;
+    }
+    const carriedSpecialId = this.player.laserFocusIds.find((focusId) => isSpecialLaserFocus(focusId));
+    if (carriedSpecialId) {
+      this.offerFocusReplacement(pickup, this.player.equippedFocusId);
+      return;
+    }
+    this.acquireLaserFocus(pickup);
+  }
+
+  acquireLaserFocus(pickup) {
+    const focus = getLaserFocus(pickup.focusId);
+    this.cancelLaserCharge();
+    this.player.laserFocusIds = normalizeLaserFocusIds([...this.player.laserFocusIds, focus.id]);
+    this.player.equippedFocusId = focus.id;
+    const focusNumber = this.player.laserFocusIds.indexOf(focus.id) + 1;
+    pickup.collected = true;
+    this.audio.resonance({ volume: 0.72, pitch: 2 });
+    this.emitParticles(pickup.x, pickup.y, focus.color, 28, true);
+    this.showGameMessage(
+      `${focus.name} attuned. Hold Tab and press ${focusNumber} to return to it after selecting Standard with Tab + 1.`,
+      6,
+      focus.icon,
+    );
+    this.updateHud();
+  }
+
+  offerFocusReplacement(pickup, carriedSpecialId) {
+    const discovered = getLaserFocus(pickup.focusId);
+    const carried = getLaserFocus(carriedSpecialId);
+    this.cancelLaserCharge();
+    this.pendingFocusChoice = { pickupId: pickup.id, focusId: discovered.id };
+    this.state = GAME_STATES.FOCUS_CHOICE;
+    this.input.reset();
+    this.dom.focusSwapName.textContent = discovered.name;
+    this.dom.focusSwapDescription.textContent = `Attune ${discovered.name} and equip it instead of ${carried.name}? Both remain available through Tab + number selection.`;
+    this.showModal("focusSwapOverlay", this.dom.equipFocusButton);
+  }
+
+  resolveFocusChoice(replaceCurrent) {
+    if (this.state !== GAME_STATES.FOCUS_CHOICE || !this.pendingFocusChoice) return;
+    const pickup = this.pickups.find((candidate) => candidate.id === this.pendingFocusChoice.pickupId);
+    if (pickup) {
+      const equippedBeforeChoice = this.player.equippedFocusId;
+      this.acquireLaserFocus(pickup);
+      if (!replaceCurrent) this.player.equippedFocusId = equippedBeforeChoice;
+    }
+    this.pendingFocusChoice = null;
+    this.hideModals();
+    this.state = GAME_STATES.PLAYING;
+    this.input.reset();
+    this.dom.canvas.focus({ preventScroll: true });
+    this.updateHud();
+    if (!replaceCurrent) this.showToast("New Focus attuned; current Focus remains equipped.", 2);
   }
 
   isCrystalPickup(pickup) {
@@ -777,6 +995,7 @@ export class CrystalLabyrinthGame {
 
   completeLevel() {
     if (this.state !== GAME_STATES.PLAYING) return;
+    this.cancelLaserCharge();
     this.state = this.levelId === 3 ? GAME_STATES.VICTORY : GAME_STATES.COMPLETE;
     this.door.progress = this.door.activationSeconds;
     this.door.activating = false;
@@ -798,6 +1017,8 @@ export class CrystalLabyrinthGame {
           hotbar: [...this.player.hotbar],
           selectedSlot: this.player.selectedSlot,
           healProgress: this.player.healProgress,
+          laserFocusIds: [...this.player.laserFocusIds],
+          equippedFocusId: this.player.equippedFocusId,
         },
         runTime: this.runTime,
         totalShardsCollected: this.totalShardsCollected,
@@ -818,7 +1039,7 @@ export class CrystalLabyrinthGame {
       this.dom.completeShardCount.textContent = String(this.player.shards);
       this.dom.completeShardGoal.textContent = String(RULES.shardGoal);
       this.dom.completeTime.textContent = readableTime(this.levelTime);
-      this.dom.levelCompleteDescription.textContent = `The path to ${LEVEL_CONFIG[this.levelId + 1].name} is now open. Lives and items will carry forward; shards will not.`;
+      this.dom.levelCompleteDescription.textContent = `The path to ${LEVEL_CONFIG[this.levelId + 1].name} is now open. Lives, items, and your Laser Focus will carry forward; shards will not.`;
       this.dom.nextLevelButton.textContent = `Enter Level ${this.levelId + 1}`;
       this.showModal("levelCompleteOverlay", this.dom.nextLevelButton);
     }
@@ -836,6 +1057,8 @@ export class CrystalLabyrinthGame {
           hotbar: [...this.player.hotbar],
           selectedSlot: this.player.selectedSlot,
           healProgress: this.player.healProgress,
+          laserFocusIds: [...this.player.laserFocusIds],
+          equippedFocusId: this.player.equippedFocusId,
         };
     this.startLevel(nextLevel, carry);
   }
@@ -1114,6 +1337,7 @@ export class CrystalLabyrinthGame {
 
   damagePlayer(enemy) {
     const beforeShards = this.player.shards;
+    this.cancelLaserCharge();
     this.player.lives -= 1;
     if (this.player.shards > 0) this.player.shards -= 1;
     this.player.invulnerability = PLAYER_DEFAULTS.invulnerabilitySeconds;
@@ -1161,6 +1385,7 @@ export class CrystalLabyrinthGame {
   }
 
   fullDeath() {
+    this.cancelLaserCharge();
     this.state = GAME_STATES.DEAD;
     this.projectiles = [];
     this.pendingContinuation = null;
@@ -1175,8 +1400,8 @@ export class CrystalLabyrinthGame {
       this.updateMenu();
     }
     this.dom.deathDescription.textContent = nightmare
-      ? "Nightmare extinguishes the whole run. Your hotbar is lost and the next attempt begins at Level 1."
-      : `Your hotbar is lost. The next attempt restarts ${LEVEL_CONFIG[this.levelId].name}.`;
+      ? "Nightmare extinguishes the whole run. Your hotbar and special Laser Focus are lost, and the next attempt begins at Level 1."
+      : `Your hotbar and special Laser Focus are lost. The next attempt restarts ${LEVEL_CONFIG[this.levelId].name} with Standard Focus.`;
     this.dom.retryButton.textContent = nightmare ? "Return to Level 1" : "Retry this level";
     this.showModal("deathOverlay", this.dom.retryButton);
   }
@@ -1188,6 +1413,7 @@ export class CrystalLabyrinthGame {
 
   pause() {
     if (this.state !== GAME_STATES.PLAYING) return;
+    this.cancelLaserCharge();
     this.state = GAME_STATES.PAUSED;
     this.input.reset();
     this.audio.stopAmbience({ fade: 0.25 });
@@ -1204,6 +1430,7 @@ export class CrystalLabyrinthGame {
   }
 
   openExit() {
+    this.cancelLaserCharge();
     this.stateBeforeExit = this.state;
     this.state = GAME_STATES.EXIT;
     this.showModal("exitOverlay", this.dom.cancelExitButton);
@@ -1339,8 +1566,13 @@ export class CrystalLabyrinthGame {
         ? (this.door.activating ? "awakening seal…" : "awaken exit seal")
         : `seal needs ${RULES.shardGoal - this.player.shards} shard${RULES.shardGoal - this.player.shards === 1 ? "" : "s"}`;
     } else {
+      const focus = this.getEquippedLaserFocus();
       this.dom.controlHintKey.textContent = "Space";
-      this.dom.controlHintText.textContent = this.player.shards > 0 ? "fire crystal laser" : "find a shard to fire";
+      this.dom.controlHintText.textContent = this.player.shards >= focus.shardCost
+        ? (focus.chargeTime > 0
+            ? `hold to charge ${focus.shortName} · release to fire`
+            : `fire ${focus.shortName}`)
+        : "find a shard to fire";
     }
   }
 
@@ -1373,6 +1605,8 @@ export class CrystalLabyrinthGame {
     this.dom.storedHalfHeart.hidden = !storedPastFullLives;
     this.dom.storedHalfHeart.classList.toggle("is-half", storedPastFullLives);
 
+    this.updateLaserFocusHud();
+
     this.dom.hotbarButtons.forEach((button, index) => {
       const item = this.player.hotbar[index];
       const selected = index === this.player.selectedSlot;
@@ -1389,6 +1623,53 @@ export class CrystalLabyrinthGame {
       }
       if (tooltip) tooltip.textContent = item ? "Half Heart · F to use" : "Empty";
     });
+  }
+
+  updateLaserFocusHud() {
+    const focus = this.getEquippedLaserFocus();
+    const chargeFocus = this.player.focusCharging
+      ? getLaserFocus(this.player.chargingFocusId)
+      : focus;
+    const chargeRatio = this.player.focusCharging && chargeFocus.chargeTime > 0
+      ? clamp(this.player.focusCharge / chargeFocus.chargeTime, 0, 1)
+      : 0;
+    this.dom.laserFocusSlot.dataset.focusId = focus.id;
+    this.dom.laserFocusSlot.style.setProperty("--focus-color", focus.color);
+    this.dom.laserFocusSlot.classList.toggle("is-charging", this.player.focusCharging);
+    this.dom.laserFocusSlot.classList.toggle("is-ready", this.player.focusChargeReady);
+    this.dom.laserFocusSlot.setAttribute(
+      "aria-label",
+      `Equipped Laser Focus: ${focus.name}. ${focus.damage} damage, ${focus.shardCost} shard per shot${focus.chargeTime > 0 ? `, ${focus.chargeTime.toFixed(2)} second charge` : ""}.`,
+    );
+    this.dom.laserFocusGlyph.textContent = focus.icon;
+    this.dom.laserFocusName.textContent = focus.shortName;
+    this.dom.focusChargeFill.style.setProperty("--charge", `${chargeRatio * 100}%`);
+
+    const signature = `${this.player.laserFocusIds.join(",")}|${this.player.equippedFocusId}`;
+    if (this.dom.focusPicker.dataset.signature !== signature) {
+      this.dom.focusPicker.dataset.signature = signature;
+      const options = this.player.laserFocusIds.map((focusId, index) => {
+        const optionFocus = getLaserFocus(focusId);
+        const option = document.createElement("div");
+        option.className = "focus-option";
+        option.classList.toggle("is-equipped", focusId === this.player.equippedFocusId);
+        option.style.setProperty("--option-color", optionFocus.color);
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", String(focusId === this.player.equippedFocusId));
+
+        const key = document.createElement("kbd");
+        key.textContent = String(index + 1);
+        const name = document.createElement("span");
+        name.textContent = optionFocus.name;
+        const state = document.createElement("span");
+        state.className = "focus-option-state";
+        state.textContent = focusId === this.player.equippedFocusId ? "Equipped" : `${optionFocus.damage} DMG`;
+        option.append(key, name, state);
+        return option;
+      });
+      this.dom.focusPicker.replaceChildren(...options);
+    }
+    this.dom.focusPicker.hidden = !this.input.isHeld("focusModifier");
   }
 
   showToast(text, duration = 2) {

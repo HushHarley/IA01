@@ -243,7 +243,18 @@
               <p id="gameMessageText">The crystals remember every footstep.</p>
             </div>
 
-            <nav id="hotbar" class="hotbar pixel-frame" aria-label="Item hotbar">
+            <div id="loadoutBar" class="loadout-bar pixel-frame" aria-label="Laser Focus and item hotbar">
+              <section id="laserFocusSlot" class="laser-focus-slot" aria-label="Equipped Laser Focus: Standard Focus">
+                <span class="focus-slot-label">Laser Focus</span>
+                <span id="laserFocusGlyph" class="laser-focus-glyph" aria-hidden="true">✦</span>
+                <strong id="laserFocusName">Standard</strong>
+                <span class="focus-slot-key" aria-hidden="true">Tab</span>
+                <span id="focusChargeTrack" class="focus-charge-track" aria-hidden="true">
+                  <span id="focusChargeFill"></span>
+                </span>
+              </section>
+              <span class="loadout-divider" aria-hidden="true"></span>
+              <nav id="hotbar" class="hotbar" aria-label="Item hotbar">
               <button id="hotbarSlot1" class="hotbar-slot is-selected is-empty" type="button" data-slot="1" data-item="" aria-label="Slot 1, empty, selected" aria-pressed="true">
                 <span class="slot-number">1</span>
                 <span class="slot-icon" aria-hidden="true"></span>
@@ -265,7 +276,9 @@
               <button id="hotbarSlot6" class="hotbar-slot is-empty" type="button" data-slot="6" data-item="" aria-label="Slot 6, empty" aria-pressed="false">
                 <span class="slot-number">6</span><span class="slot-icon" aria-hidden="true"></span><span class="slot-count"></span><span class="slot-tooltip">Empty</span>
               </button>
-            </nav>
+              </nav>
+              <div id="focusPicker" class="focus-picker" role="listbox" aria-label="Available Laser Focuses" hidden></div>
+            </div>
           </div>
 
           <div id="toast" class="toast pixel-frame" role="status" aria-live="polite" aria-atomic="true" hidden>
@@ -278,6 +291,8 @@
           <kbd>WASD</kbd> / <kbd>Arrows</kbd> move
           <span aria-hidden="true">•</span>
           <kbd>Space</kbd> use
+          <span aria-hidden="true">•</span>
+          <kbd>Tab</kbd> + <kbd>1–6</kbd> focus
           <span aria-hidden="true">•</span>
           <kbd>Esc</kbd> pause
         </p>
@@ -321,6 +336,23 @@
           <div class="modal-actions">
             <button id="retryButton" class="modal-button primary" type="button" data-action="retry">Try again</button>
             <button id="deathMenuButton" class="modal-button quiet" type="button" data-action="return-menu">Main menu</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="focusSwapOverlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="focusSwapTitle" aria-describedby="focusSwapDescription" hidden>
+        <div class="modal-card pixel-frame" data-modal="focus-swap">
+          <span class="modal-gem focus-swap-gem" aria-hidden="true">⬢</span>
+          <p class="modal-eyebrow">Focus Chamber discovered</p>
+          <h2 id="focusSwapTitle">Replace Laser Focus?</h2>
+          <p id="focusSwapDescription">A new crystal frequency waits on the altar.</p>
+          <div class="focus-swap-readout">
+            <span>Discovered</span>
+            <strong id="focusSwapName">Heavy Focus</strong>
+          </div>
+          <div class="modal-actions">
+            <button id="equipFocusButton" class="modal-button primary" type="button">Equip new focus</button>
+            <button id="keepFocusButton" class="modal-button quiet" type="button">Keep current focus</button>
           </div>
         </div>
       </section>

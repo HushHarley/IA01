@@ -42,7 +42,6 @@ export const RULES = deepFreeze({
   shardCapacity: 10,
   regularCrystalValue: 1,
   crystalChunkValue: 2,
-  laserShardCost: 1,
   doorActivationSeconds: 2,
   resonanceCooldownSeconds: 4,
   crystalRespawn: {
@@ -195,9 +194,6 @@ export const PLAYER_DEFAULTS = deepFreeze({
   facing: "down",
   invulnerabilitySeconds: 1,
   knockbackTiles: 1,
-  laserSpeed: 720,
-  laserLifetimeSeconds: 0.48,
-  laserCooldownSeconds: 0.18,
 });
 
 /**

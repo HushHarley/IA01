@@ -28,7 +28,11 @@ socket.addEventListener("message", (event) => {
     return;
   }
   if (message.method === "Runtime.exceptionThrown") {
-    browserErrors.push(message.params.exceptionDetails.text);
+    browserErrors.push(
+      message.params.exceptionDetails.exception?.description
+      || message.params.exceptionDetails.exception?.value
+      || message.params.exceptionDetails.text,
+    );
   }
   if (message.method === "Log.entryAdded" && message.params.entry.level === "error") {
     browserErrors.push(message.params.entry.text);
@@ -52,10 +56,18 @@ async function evaluate(expression) {
 }
 
 async function tap(code, key = code) {
-  await evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`);
+  await keyDown(code, key);
   await sleep(70);
-  await evaluate(`window.dispatchEvent(new KeyboardEvent("keyup", { code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`);
+  await keyUp(code, key);
   await sleep(90);
+}
+
+async function keyDown(code, key = code) {
+  await evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`);
+}
+
+async function keyUp(code, key = code) {
+  await evaluate(`window.dispatchEvent(new KeyboardEvent("keyup", { code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`);
 }
 
 await command("Runtime.enable");
@@ -118,6 +130,17 @@ const bootState = await evaluate(`(() => {
     lives: game.player.lives,
     shards: game.player.shards,
     hotbar: game.player.hotbar,
+    focusIds: game.player.laserFocusIds,
+    equippedFocus: game.player.equippedFocusId,
+    focusPickupCount: game.pickups.filter((pickup) => pickup.kind === "laser-focus").length,
+    focusHud: (() => {
+      const focus = document.getElementById("laserFocusSlot").getBoundingClientRect();
+      const hotbar = document.getElementById("hotbar").getBoundingClientRect();
+      return {
+        immediatelyLeft: focus.right <= hotbar.left && hotbar.left - focus.right < 16,
+        name: document.getElementById("laserFocusName").textContent,
+      };
+    })(),
     enemies: game.enemies.length,
     atlasReady: game.renderer.atlasReady,
     atlasWidth: game.renderer.gameplayAtlas.naturalWidth,
@@ -145,6 +168,10 @@ assert.ok(bootState.width >= 61 && bootState.height >= 39, "World should be seve
 assert.equal(bootState.lives, 3);
 assert.equal(bootState.shards, 0);
 assert.deepEqual(bootState.hotbar, Array(6).fill(null));
+assert.deepEqual(bootState.focusIds, ["standard"], "Every fresh run should begin with only Standard Focus attuned.");
+assert.equal(bootState.equippedFocus, "standard");
+assert.equal(bootState.focusPickupCount, 1, "A fresh labyrinth should contain one rare Focus Chamber.");
+assert.deepEqual(bootState.focusHud, { immediatelyLeft: true, name: "Standard" }, "The dedicated Laser Focus slot should sit immediately left of item slot 1.");
 assert.ok(bootState.enemies >= 5);
 assert.equal(bootState.atlasReady, true, "The transparent gameplay atlas should load before the first playable view.");
 assert.equal(bootState.atlasWidth, 1254, "The renderer should use the expected gameplay atlas version.");
@@ -163,6 +190,61 @@ assert.deepEqual(bootState.walkCycle, [0, 1, 2, 1], "Moving should play the thre
 assert.equal(bootState.idleWalkFrame, 1, "An idle player should hold the neutral walk frame.");
 assert.equal(bootState.reducedMotionWalkFrame, 1, "Reduced-motion mode should hold the neutral walk frame.");
 assert.equal(bootState.oldDoorBarRemoved, true, "Door activation should no longer use the old filling progress bar.");
+
+const doorBeacon = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  const original = {
+    shards: game.player.shards,
+    doorX: game.door.x,
+    doorY: game.door.y,
+  };
+  game.door.x = game.camera.x + 1560;
+  game.door.y = game.player.y;
+  game.player.shards = 9;
+  const beforeGoal = game.renderer.getDoorBeaconState(game);
+  game.player.shards = 10;
+  const atGoal = game.renderer.getDoorBeaconState(game);
+  game.door.x = game.player.x + 32;
+  game.door.y = game.player.y;
+  const doorOnScreen = game.renderer.getDoorBeaconState(game);
+  game.player.shards = original.shards;
+  game.door.x = original.doorX;
+  game.door.y = original.doorY;
+  return { beforeGoal, atGoal, doorOnScreen };
+})()`);
+assert.equal(doorBeacon.beforeGoal, null, "The exit beacon should stay hidden before all ten shards are held.");
+assert.ok(doorBeacon.atGoal.x >= 930 && doorBeacon.atGoal.x <= 934, "A distant eastward gate should place the beacon along the right edge.");
+assert.ok(Math.abs(doorBeacon.atGoal.y - 270) < 80, "The beacon should preserve the gate's direction from the player.");
+assert.equal(doorBeacon.doorOnScreen, null, "The edge beacon should yield to the visible gate.");
+
+await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  game._beaconPreviewState = {
+    state: game.state,
+    shards: game.player.shards,
+    doorX: game.door.x,
+    doorY: game.door.y,
+  };
+  game.state = "paused";
+  game.player.shards = 10;
+  game.door.x = game.camera.x + 1560;
+  game.door.y = game.player.y;
+  game.updateHud();
+})()`);
+await sleep(120);
+const doorBeaconScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
+await writeFile(new URL("./door-beacon-smoke.png", import.meta.url), Buffer.from(doorBeaconScreenshot.data, "base64"));
+await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  const preview = game._beaconPreviewState;
+  game.state = preview.state;
+  game.player.shards = preview.shards;
+  game.door.x = preview.doorX;
+  game.door.y = preview.doorY;
+  game.updateHud();
+  delete game._beaconPreviewState;
+})()`);
+
 assert.equal(
   await evaluate(`(() => {
     const game = window.crystalLabyrinth;
@@ -187,7 +269,7 @@ await command("Emulation.setDeviceMetricsOverride", {
 await sleep(250);
 const mobileLayout = await evaluate(`(() => {
   const viewport = document.getElementById("gameViewport").getBoundingClientRect();
-  const hotbar = document.getElementById("hotbar").getBoundingClientRect();
+  const hotbar = document.getElementById("loadoutBar").getBoundingClientRect();
   const pause = document.getElementById("pauseButton").getBoundingClientRect();
   const overlap = !(hotbar.right <= pause.left || pause.right <= hotbar.left || hotbar.bottom <= pause.top || pause.bottom <= hotbar.top);
   return {
@@ -196,12 +278,14 @@ const mobileLayout = await evaluate(`(() => {
     viewportLeft: viewport.left,
     viewportRight: viewport.right,
     overlap,
+    loadoutBounds: { left: hotbar.left, right: hotbar.right, top: hotbar.top, bottom: hotbar.bottom },
+    pauseBounds: { left: pause.left, right: pause.right, top: pause.top, bottom: pause.bottom },
     messageDisplay: getComputedStyle(document.getElementById("gameMessage")).display,
   };
 })()`);
 assert.ok(mobileLayout.scrollWidth <= mobileLayout.innerWidth, "The 390px game view must not overflow horizontally.");
 assert.ok(mobileLayout.viewportLeft >= 0 && mobileLayout.viewportRight <= 390, "The mobile canvas frame must fit onscreen.");
-assert.equal(mobileLayout.overlap, false, "The mobile pause control must not overlap the hotbar.");
+assert.equal(mobileLayout.overlap, false, `The mobile pause control must not overlap the hotbar: ${JSON.stringify(mobileLayout)}`);
 assert.equal(mobileLayout.messageDisplay, "none", "The tutorial card should yield scarce space on narrow gameplay screens.");
 const mobileScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
 await writeFile(new URL("./mobile-smoke.png", import.meta.url), Buffer.from(mobileScreenshot.data, "base64"));
@@ -368,6 +452,205 @@ await evaluate(`(() => {
 await tap("Space", " ");
 assert.equal(await evaluate("window.crystalLabyrinth.player.shards"), 1, "Firing should consume one shard.");
 
+const standardFocusShot = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  game.player.equippedFocusId = "standard";
+  game.player.shards = 3;
+  game.player.fireCooldown = 0;
+  game.projectiles = [];
+  const focus = game.getEquippedLaserFocus();
+  const fired = game.fireLaser(focus);
+  const shot = { ...game.projectiles[0] };
+  const normal = { type: "basic", health: 1, dead: false, x: game.player.x, y: game.player.y };
+  const brute = { type: "brute", health: 2, dead: false, x: game.player.x, y: game.player.y };
+  game.damageEnemy(normal, { ...shot });
+  game.damageEnemy(brute, { ...shot });
+  game.projectiles = [];
+  return {
+    fired,
+    shardCost: shot.shardCost,
+    damage: shot.damage,
+    beamWidth: shot.beamWidth,
+    range: shot.life * Math.hypot(shot.vx, shot.vy),
+    normalDead: normal.dead,
+    bruteHealth: brute.health,
+    bruteDead: brute.dead,
+  };
+})()`);
+assert.equal(standardFocusShot.fired, true);
+assert.equal(standardFocusShot.shardCost, 1);
+assert.equal(standardFocusShot.damage, 1);
+assert.equal(standardFocusShot.beamWidth, 4);
+assert.ok(Math.abs(standardFocusShot.range - 360) < 0.01, "Standard Focus should keep good configured range.");
+assert.equal(standardFocusShot.normalDead, true, "Standard Focus should one-shot normal enemies.");
+assert.deepEqual(
+  { health: standardFocusShot.bruteHealth, dead: standardFocusShot.bruteDead },
+  { health: 1, dead: false },
+  "Standard Focus should require two hits against Brutes.",
+);
+
+await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  const pickup = game.pickups.find((candidate) => candidate.kind === "laser-focus");
+  game._focusPreviewState = { state: game.state, camera: { ...game.camera } };
+  game.state = "paused";
+  game.camera.x = Math.max(0, Math.min(game.world.pixelWidth - 960, pickup.x - 480));
+  game.camera.y = Math.max(0, Math.min(game.world.pixelHeight - 540, pickup.y - 270));
+})()`);
+await sleep(120);
+const focusChamberScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
+await writeFile(new URL("./focus-chamber-smoke.png", import.meta.url), Buffer.from(focusChamberScreenshot.data, "base64"));
+await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  game.state = game._focusPreviewState.state;
+  game.camera = game._focusPreviewState.camera;
+  delete game._focusPreviewState;
+})()`);
+
+const focusDiscovery = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  const pickup = game.pickups.find((candidate) => candidate.kind === "laser-focus");
+  pickup.x = game.player.x;
+  pickup.y = game.player.y;
+  game.updatePickups();
+  game.updateHud();
+  return {
+    collected: pickup.collected,
+    focusIds: game.player.laserFocusIds,
+    equipped: game.player.equippedFocusId,
+    hudName: document.getElementById("laserFocusName").textContent,
+    hotbarStillSixSlots: document.querySelectorAll(".hotbar-slot").length,
+  };
+})()`);
+assert.deepEqual(
+  focusDiscovery,
+  { collected: true, focusIds: ["standard", "heavy"], equipped: "heavy", hudName: "Heavy", hotbarStillSixSlots: 6 },
+  "The Focus Chamber should equip Heavy without consuming a normal item slot.",
+);
+
+await evaluate("window.crystalLabyrinth.player.selectedSlot = 0");
+await keyDown("Tab", "Tab");
+await sleep(110);
+const focusPickerState = await evaluate(`(() => ({
+  visible: !document.getElementById("focusPicker").hidden,
+  options: document.querySelectorAll("#focusPicker .focus-option").length,
+}))()`);
+assert.deepEqual(focusPickerState, { visible: true, options: 2 }, "Holding Tab should reveal the two attuned Laser Focus choices.");
+const focusPickerScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
+await writeFile(new URL("./focus-picker-smoke.png", import.meta.url), Buffer.from(focusPickerScreenshot.data, "base64"));
+await tap("Digit1", "1");
+assert.deepEqual(
+  await evaluate("({ focus: window.crystalLabyrinth.player.equippedFocusId, itemSlot: window.crystalLabyrinth.player.selectedSlot })"),
+  { focus: "standard", itemSlot: 0 },
+  "Tab + 1 should equip Standard without changing the item hotbar selection.",
+);
+await keyUp("Tab", "Tab");
+await sleep(100);
+await tap("Digit2", "2");
+assert.deepEqual(
+  await evaluate("({ focus: window.crystalLabyrinth.player.equippedFocusId, itemSlot: window.crystalLabyrinth.player.selectedSlot })"),
+  { focus: "standard", itemSlot: 1 },
+  "A number key without Tab should remain exclusive to the item hotbar.",
+);
+await keyDown("Tab", "Tab");
+await tap("Digit2", "2");
+await keyUp("Tab", "Tab");
+await sleep(100);
+assert.deepEqual(
+  await evaluate("({ focus: window.crystalLabyrinth.player.equippedFocusId, itemSlot: window.crystalLabyrinth.player.selectedSlot })"),
+  { focus: "heavy", itemSlot: 1 },
+  "Tab + 2 should equip the later-discovered Heavy Focus without changing the item slot.",
+);
+
+await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  game.player.shards = 3;
+  game.player.fireCooldown = 0;
+  game.projectiles = [];
+  game.door.x = -1000;
+  game.door.y = -1000;
+})()`);
+await keyDown("Space", " ");
+await sleep(300);
+const partialHeavyCharge = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  return {
+    charging: game.player.focusCharging,
+    ready: game.player.focusChargeReady,
+    shards: game.player.shards,
+    slotCharging: document.getElementById("laserFocusSlot").classList.contains("is-charging"),
+  };
+})()`);
+assert.deepEqual(partialHeavyCharge, { charging: true, ready: false, shards: 3, slotCharging: true }, "Heavy Focus should visibly charge without spending its shard early.");
+await keyUp("Space", " ");
+await sleep(130);
+assert.deepEqual(browserErrors, [], `Browser errors during Heavy Focus release: ${browserErrors.join(" | ")}`);
+assert.deepEqual(
+  await evaluate("({ state: window.crystalLabyrinth.state, charging: window.crystalLabyrinth.player.focusCharging, shards: window.crystalLabyrinth.player.shards, shots: window.crystalLabyrinth.projectiles.length, actionHeld: window.crystalLabyrinth.input.isHeld('action') })"),
+  { state: "playing", charging: false, shards: 3, shots: 0, actionHeld: false },
+  "Releasing Heavy Focus before it is ready should cancel without consuming ammunition.",
+);
+
+await keyDown("Space", " ");
+await sleep(1250);
+const readyHeavyCharge = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  return {
+    charging: game.player.focusCharging,
+    ready: game.player.focusChargeReady,
+    shards: game.player.shards,
+    chargeCss: document.getElementById("focusChargeFill").style.getPropertyValue("--charge"),
+    readyPulse: document.getElementById("laserFocusSlot").classList.contains("is-ready"),
+  };
+})()`);
+assert.deepEqual(
+  readyHeavyCharge,
+  { charging: true, ready: true, shards: 3, chargeCss: "100%", readyPulse: true },
+  "A held Heavy Focus should reach a clear fully charged state before spending a shard.",
+);
+const focusChargeScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
+await writeFile(new URL("./focus-charge-smoke.png", import.meta.url), Buffer.from(focusChargeScreenshot.data, "base64"));
+await keyUp("Space", " ");
+await sleep(120);
+assert.deepEqual(
+  await evaluate("({ charging: window.crystalLabyrinth.player.focusCharging, shards: window.crystalLabyrinth.player.shards, coolingDown: window.crystalLabyrinth.player.fireCooldown > 0 })"),
+  { charging: false, shards: 2, coolingDown: true },
+  "Releasing a fully charged Heavy Focus should fire and spend exactly one shard.",
+);
+
+const heavyFocusShot = await evaluate(`(() => {
+  const game = window.crystalLabyrinth;
+  game.player.fireCooldown = 0;
+  game.player.shards = 2;
+  game.projectiles = [];
+  const focus = game.getEquippedLaserFocus();
+  const fired = game.fireLaser(focus, { charged: true });
+  const shot = { ...game.projectiles[0] };
+  const brute = { type: "brute", health: 2, dead: false, x: game.player.x, y: game.player.y };
+  game.damageEnemy(brute, { ...shot });
+  game.projectiles = [];
+  return {
+    fired,
+    shardCost: shot.shardCost,
+    damage: shot.damage,
+    beamWidth: shot.beamWidth,
+    range: shot.life * Math.hypot(shot.vx, shot.vy),
+    bruteHealth: brute.health,
+    bruteDead: brute.dead,
+    shards: game.player.shards,
+  };
+})()`);
+assert.equal(heavyFocusShot.fired, true);
+assert.equal(heavyFocusShot.shardCost, 1, "Heavy Focus should never be balanced by a two-shard cost.");
+assert.equal(heavyFocusShot.damage, 2);
+assert.equal(heavyFocusShot.beamWidth, 8);
+assert.ok(Math.abs(heavyFocusShot.range - 390) < 0.01, "Heavy Focus should retain good configured range.");
+assert.deepEqual(
+  { health: heavyFocusShot.bruteHealth, dead: heavyFocusShot.bruteDead, shards: heavyFocusShot.shards },
+  { health: 0, dead: true, shards: 1 },
+  "One Heavy shot should trade one shard for enough damage to kill a Brute.",
+);
+
 const collectedRespawn = await evaluate(`(() => {
   const game = window.crystalLabyrinth;
   const crystal = game.pickups.find((pickup) => pickup.kind === "regular-crystal");
@@ -486,6 +769,7 @@ await evaluate(`(() => {
   game.player.hotbar = ["half-heart", null, null, null, null, null];
   game.player.healProgress = 1;
   game.player.shards = 10;
+  game.player.equippedFocusId = "heavy";
   game.player.x = game.door.x;
   game.player.y = game.door.y + 32;
   game.player.facing = "up";
@@ -495,7 +779,11 @@ await sleep(300);
 const emptyDoorScreenshot = await command("Page.captureScreenshot", { format: "png", fromSurface: true });
 await writeFile(new URL("./door-empty-smoke.png", import.meta.url), Buffer.from(emptyDoorScreenshot.data, "base64"));
 await tap("Space", " ");
-assert.equal(await evaluate("window.crystalLabyrinth.door.activating"), true, "Facing the full-charged door should start activation.");
+assert.deepEqual(
+  await evaluate("({ activating: window.crystalLabyrinth.door.activating, charging: window.crystalLabyrinth.player.focusCharging, shards: window.crystalLabyrinth.player.shards })"),
+  { activating: true, charging: false, shards: 10 },
+  "A faced door should take Space priority over Heavy Focus without spending a shard.",
+);
 await sleep(950);
 const midDoorActivation = await evaluate(`(() => {
   const game = window.crystalLabyrinth;
@@ -552,9 +840,21 @@ await evaluate(`(() => {
 await sleep(650);
 const carried = await evaluate(`(() => {
   const game = window.crystalLabyrinth;
-  return { level: game.levelId, lives: game.player.lives, shards: game.player.shards, item: game.player.hotbar[0], heal: game.player.healProgress };
+  return {
+    level: game.levelId,
+    lives: game.player.lives,
+    shards: game.player.shards,
+    item: game.player.hotbar[0],
+    heal: game.player.healProgress,
+    focusIds: game.player.laserFocusIds,
+    equippedFocus: game.player.equippedFocusId,
+  };
 })()`);
-assert.deepEqual(carried, { level: 2, lives: 2, shards: 0, item: "half-heart", heal: 1 }, "Lives, items, and heal charge should carry; shards should reset.");
+assert.deepEqual(
+  carried,
+  { level: 2, lives: 2, shards: 0, item: "half-heart", heal: 1, focusIds: ["standard", "heavy"], equippedFocus: "heavy" },
+  "Lives, items, heal charge, and the equipped Focus should carry; shards should reset.",
+);
 
 await evaluate(`(() => {
   const game = window.crystalLabyrinth;
@@ -632,15 +932,28 @@ await evaluate("window.crystalLabyrinth.retryAfterDeath()");
 await sleep(550);
 const standardRetry = await evaluate(`(() => {
   const game = window.crystalLabyrinth;
-  return { level: game.levelId, lives: game.player.lives, shards: game.player.shards, hotbarEmpty: game.player.hotbar.every((item) => item === null) };
+  return {
+    level: game.levelId,
+    lives: game.player.lives,
+    shards: game.player.shards,
+    hotbarEmpty: game.player.hotbar.every((item) => item === null),
+    focusIds: game.player.laserFocusIds,
+    equippedFocus: game.player.equippedFocusId,
+  };
 })()`);
-assert.deepEqual(standardRetry, { level: 2, lives: 3, shards: 0, hotbarEmpty: true }, "Standard death should restart the current level with a reset inventory.");
+assert.deepEqual(
+  standardRetry,
+  { level: 2, lives: 3, shards: 0, hotbarEmpty: true, focusIds: ["standard"], equippedFocus: "standard" },
+  "Standard death should restart the current level with a reset inventory and Standard Focus.",
+);
 
 await evaluate(`(() => {
   const game = window.crystalLabyrinth;
   game.selectedDifficulty = "nightmare";
   game.startRun(2);
   game.player.hotbar[0] = "half-heart";
+  game.player.laserFocusIds = ["standard", "heavy"];
+  game.player.equippedFocusId = "heavy";
   game.completeLevel();
   game._savedUnlockBeforeNightmareDeath = game.save.unlockedLevel;
   game.fullDeath();
@@ -651,12 +964,25 @@ await evaluate(`(() => {
 await sleep(650);
 const nightmareRetry = await evaluate(`(() => {
   const game = window.crystalLabyrinth;
-  return { level: game.levelId, selected: game.selectedLevel, savedUnlock: game._savedUnlockBeforeNightmareDeath, difficulty: game.difficultyId, lives: game.player.lives, hotbarEmpty: game.player.hotbar.every((item) => item === null) };
+  return {
+    level: game.levelId,
+    selected: game.selectedLevel,
+    savedUnlock: game._savedUnlockBeforeNightmareDeath,
+    difficulty: game.difficultyId,
+    lives: game.player.lives,
+    hotbarEmpty: game.player.hotbar.every((item) => item === null),
+    focusIds: game.player.laserFocusIds,
+    equippedFocus: game.player.equippedFocusId,
+  };
 })()`);
-assert.deepEqual(nightmareRetry, { level: 1, selected: 1, savedUnlock: 2, difficulty: "nightmare", lives: 3, hotbarEmpty: true }, "Nightmare death should discard intermediate checkpoints and force Level 1 through the menu.");
+assert.deepEqual(
+  nightmareRetry,
+  { level: 1, selected: 1, savedUnlock: 2, difficulty: "nightmare", lives: 3, hotbarEmpty: true, focusIds: ["standard"], equippedFocus: "standard" },
+  "Nightmare death should discard intermediate checkpoints, special Focuses, and force Level 1 through the menu.",
+);
 
 assert.deepEqual(browserErrors, [], `Browser errors: ${browserErrors.join(" | ")}`);
-console.log("Browser smoke test passed: boot, directional walk animation, correctly facing enemies, duo and pack coordination, mined pickups, movement, firing, crystal respawn, Half Hearts, animated door sockets, crystal-centered completion aura, cracked death crystal, carryover, standard retry, and Nightmare reset.");
+console.log("Browser smoke test passed: boot, ten-shard door beacon, Laser Focus HUD and controls, Standard and Heavy combat, charging feedback, Focus Chamber discovery, door priority, directional movement, enemy coordination, crystal respawn, Half Hearts, completion, death, carryover, and reset rules.");
 
 await command("Browser.close").catch(() => {});
 socket.close();

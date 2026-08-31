@@ -10,6 +10,8 @@ export const AUDIO_CUES = Object.freeze({
   CHUNK: "chunk",
   RESONANCE: "resonance",
   FIRE: "fire",
+  CHARGE: "charge",
+  CHARGE_READY: "charge-ready",
   HIT: "hit",
   HEART: "heart",
   DOOR: "door",
@@ -24,6 +26,7 @@ const CUE_ALIASES = Object.freeze({
   crystal: AUDIO_CUES.PICKUP,
   crystalChunk: AUDIO_CUES.CHUNK,
   laser: AUDIO_CUES.FIRE,
+  laserCharge: AUDIO_CUES.CHARGE,
   damage: AUDIO_CUES.HIT,
   heal: AUDIO_CUES.HEART,
   unlock: AUDIO_CUES.DOOR,
@@ -267,6 +270,12 @@ export class AudioManager {
       case AUDIO_CUES.FIRE:
         this._cueFire(time, cueOptions);
         break;
+      case AUDIO_CUES.CHARGE:
+        this._cueCharge(time, cueOptions);
+        break;
+      case AUDIO_CUES.CHARGE_READY:
+        this._cueChargeReady(time, cueOptions);
+        break;
       case AUDIO_CUES.HIT:
         this._cueHit(time, cueOptions);
         break;
@@ -303,6 +312,8 @@ export class AudioManager {
   chunk(options) { return this.play(AUDIO_CUES.CHUNK, options); }
   resonance(options) { return this.play(AUDIO_CUES.RESONANCE, options); }
   fire(options) { return this.play(AUDIO_CUES.FIRE, options); }
+  charge(options) { return this.play(AUDIO_CUES.CHARGE, options); }
+  chargeReady(options) { return this.play(AUDIO_CUES.CHARGE_READY, options); }
   hit(options) { return this.play(AUDIO_CUES.HIT, options); }
   heart(options) { return this.play(AUDIO_CUES.HEART, options); }
   door(options) { return this.play(AUDIO_CUES.DOOR, options); }
@@ -390,6 +401,37 @@ export class AudioManager {
       gain: 0.075 * volume,
       pan,
       filter: { type: "bandpass", frequency: 1550, q: 0.8 },
+    });
+  }
+
+  _cueCharge(time, { volume, pan, pitch }) {
+    this._tone({
+      time,
+      duration: 0.16,
+      frequency: 250 * pitch,
+      endFrequency: 390 * pitch,
+      type: "triangle",
+      gain: 0.045 * volume,
+      attack: 0.025,
+      release: 0.1,
+      pan,
+      filter: { type: "bandpass", frequency: 980 * pitch, q: 0.75 },
+    });
+  }
+
+  _cueChargeReady(time, { volume, pan, pitch }) {
+    [520, 780].forEach((frequency, index) => {
+      this._tone({
+        time: time + index * 0.035,
+        duration: 0.24,
+        frequency: frequency * pitch,
+        endFrequency: frequency * 1.18 * pitch,
+        type: index === 0 ? "triangle" : "sine",
+        gain: (0.065 - index * 0.012) * volume,
+        attack: 0.012,
+        release: 0.17,
+        pan: pan + (index === 0 ? -0.05 : 0.05),
+      });
     });
   }
 

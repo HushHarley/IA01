@@ -12,6 +12,7 @@ export const INPUT_ACTIONS = Object.freeze({
   RIGHT: "right",
   ACTION: "action",
   USE_ITEM: "useItem",
+  FOCUS_MODIFIER: "focusModifier",
   PAUSE: "pause",
   SLOT_1: "slot1",
   SLOT_2: "slot2",
@@ -28,6 +29,7 @@ export const DEFAULT_INPUT_BINDINGS = Object.freeze({
   [INPUT_ACTIONS.RIGHT]: Object.freeze(["KeyD", "ArrowRight"]),
   [INPUT_ACTIONS.ACTION]: Object.freeze(["Space"]),
   [INPUT_ACTIONS.USE_ITEM]: Object.freeze(["KeyF"]),
+  [INPUT_ACTIONS.FOCUS_MODIFIER]: Object.freeze(["Tab"]),
   [INPUT_ACTIONS.PAUSE]: Object.freeze(["Escape"]),
   [INPUT_ACTIONS.SLOT_1]: Object.freeze(["Digit1", "Numpad1"]),
   [INPUT_ACTIONS.SLOT_2]: Object.freeze(["Digit2", "Numpad2"]),
@@ -47,6 +49,7 @@ const ACTION_ALIASES = Object.freeze({
   fire: INPUT_ACTIONS.ACTION,
   item: INPUT_ACTIONS.USE_ITEM,
   use: INPUT_ACTIONS.USE_ITEM,
+  focus: INPUT_ACTIONS.FOCUS_MODIFIER,
   escape: INPUT_ACTIONS.PAUSE,
 });
 
@@ -61,6 +64,7 @@ const LEGACY_KEY_CODES = Object.freeze({
   D: "KeyD",
   f: "KeyF",
   F: "KeyF",
+  Tab: "Tab",
   " ": "Space",
   Spacebar: "Space",
   ArrowUp: "ArrowUp",
@@ -128,6 +132,7 @@ export class InputManager {
     this._pressed = new Set();
     this._released = new Set();
     this._slotSelections = [];
+    this._focusSelections = [];
     this._wheelSteps = 0;
     this._codeToAction = new Map();
     this._actionToCodes = new Map();
@@ -245,6 +250,11 @@ export class InputManager {
     return this._slotSelections[0] ?? null;
   }
 
+  /** Returns the next Tab-modified Laser Focus selection as a zero-based index. */
+  consumeFocusSelection() {
+    return this._focusSelections.length > 0 ? this._focusSelections.shift() : null;
+  }
+
   /**
    * Returns all accumulated wheel movement and clears it.
    * Negative means previous slot; positive means next slot.
@@ -277,6 +287,7 @@ export class InputManager {
     this._pressed.clear();
     this._released.clear();
     this._slotSelections.length = 0;
+    this._focusSelections.length = 0;
     this._wheelSteps = 0;
   }
 
@@ -292,6 +303,7 @@ export class InputManager {
     this._held.clear();
     this._pressed.clear();
     this._slotSelections.length = 0;
+    this._focusSelections.length = 0;
     this._wheelSteps = 0;
   }
 
@@ -345,7 +357,9 @@ export class InputManager {
       this._pressed.add(action);
 
       if (/^slot[1-6]$/.test(action)) {
-        this._slotSelections.push(Number(action.slice(-1)) - 1);
+        const slotIndex = Number(action.slice(-1)) - 1;
+        if (this.isHeld(INPUT_ACTIONS.FOCUS_MODIFIER)) this._focusSelections.push(slotIndex);
+        else this._slotSelections.push(slotIndex);
       }
     }
   }

@@ -4,9 +4,11 @@ import {
   LEVEL_CONFIG,
   LOGICAL_HEIGHT,
   LOGICAL_WIDTH,
+  RULES,
   TILE_SIZE,
   TILE_TYPES,
 } from "./config.js";
+import { getLaserFocus } from "./laser-focus.js";
 import { clamp, hash2D, shortestAngle, TAU } from "./utils.js";
 
 const FLOOR_VARIANTS = ["#10142f", "#121733", "#141936", "#0f132b"];
@@ -23,6 +25,8 @@ const PICKUP_ATLAS_URL = "assets/pickup-atlas-v1.png";
 const GATE_ATLAS_URL = "assets/gameplay-atlas-v4-empty-gates.png";
 const PLAYER_WALK_ATLAS_URL = "assets/player-walk-atlas-v1.png";
 const DOOR_CHARGE_STEPS = 10;
+const DOOR_BEACON_INSET = 26;
+const DOOR_BEACON_VISIBILITY_PADDING = 80;
 const PLAYER_WALK_FPS = 8;
 const PLAYER_WALK_SEQUENCE = Object.freeze([0, 1, 2, 1]);
 const ATLAS_SPRITES = Object.freeze({
@@ -162,6 +166,44 @@ export function getWallAtlasTransform(wallStyle) {
   };
 }
 
+/** Place an off-screen target beacon where its ray from the player meets the viewport edge. */
+export function getEdgeBeaconPosition(
+  source,
+  target,
+  { width = LOGICAL_WIDTH, height = LOGICAL_HEIGHT, inset = DOOR_BEACON_INSET } = {},
+) {
+  const horizontalInset = clamp(inset, 0, width / 2);
+  const verticalInset = clamp(inset, 0, height / 2);
+  const minX = horizontalInset;
+  const maxX = width - horizontalInset;
+  const minY = verticalInset;
+  const maxY = height - verticalInset;
+  const originX = clamp(source.x, minX, maxX);
+  const originY = clamp(source.y, minY, maxY);
+  const deltaX = target.x - originX;
+  const deltaY = target.y - originY;
+
+  if (Math.hypot(deltaX, deltaY) < 0.001) return null;
+
+  const horizontalTime = deltaX > 0
+    ? (maxX - originX) / deltaX
+    : deltaX < 0
+      ? (minX - originX) / deltaX
+      : Infinity;
+  const verticalTime = deltaY > 0
+    ? (maxY - originY) / deltaY
+    : deltaY < 0
+      ? (minY - originY) / deltaY
+      : Infinity;
+  const edgeTime = Math.min(horizontalTime, verticalTime);
+
+  return {
+    x: clamp(originX + deltaX * edgeTime, minX, maxX),
+    y: clamp(originY + deltaY * edgeTime, minY, maxY),
+    angle: Math.atan2(deltaY, deltaX),
+  };
+}
+
 const ENEMY_ATLAS_PROFILES = Object.freeze({
   basic: Object.freeze({
     spriteId: "stalker",
@@ -277,6 +319,7 @@ export class Renderer {
       else this.drawEnemy(game, actor.entity);
     }
 
+    this.drawPlayerFocusCharge(game);
     this.drawProjectiles(game);
     this.drawParticles(game, false);
     this.drawLighting(game);
@@ -285,6 +328,7 @@ export class Renderer {
     this.drawParticles(game, true);
     this.drawDamageFlash(game);
     this.drawVignette(game);
+    this.drawDoorBeacon(game);
     ctx.restore();
   }
 
@@ -822,7 +866,9 @@ export class Renderer {
       if (pickup.collected || !this.onScreen(game, pickup.x, pickup.y, 48)) continue;
       const screen = this.toScreen(game, pickup.x, pickup.y);
       const bob = Math.round(Math.sin(game.time * 2.8 + pickup.phase) * 3);
-      if (pickup.kind === "half-heart") {
+      if (pickup.kind === "laser-focus") {
+        this.drawLaserFocusPickup(ctx, pickup, screen.x, screen.y + bob, game.time);
+      } else if (pickup.kind === "half-heart") {
         this.drawHalfHeart(ctx, screen.x, screen.y + bob, 1);
       } else {
         const isChunk = pickup.kind === "crystal-chunk";
@@ -877,6 +923,40 @@ export class Renderer {
     ctx.fillRect(-2, 8, 4, 2);
     ctx.fillStyle = "#ffb4d2";
     ctx.fillRect(-4, -3, 3, 2);
+    ctx.restore();
+  }
+
+  drawLaserFocusPickup(ctx, pickup, x, y, time) {
+    const focus = getLaserFocus(pickup.focusId);
+    const pulse = 1 + Math.sin(time * 4 + pickup.phase) * 0.07;
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y));
+
+    // A compact ancient altar makes the single Focus Chamber read differently
+    // from ordinary loose crystal veins without adding collision geometry.
+    ctx.fillStyle = "rgba(0,0,0,.62)";
+    ctx.fillRect(-19, 12, 38, 7);
+    ctx.fillStyle = "#191226";
+    ctx.fillRect(-17, 7, 34, 8);
+    ctx.fillStyle = "#4a3562";
+    ctx.fillRect(-13, 3, 26, 6);
+    ctx.fillStyle = focus.color;
+    ctx.fillRect(-9, 5, 18, 2);
+
+    ctx.globalCompositeOperation = "lighter";
+    ctx.scale(pulse, pulse);
+    ctx.fillStyle = focus.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -18);
+    ctx.lineTo(10, -9);
+    ctx.lineTo(7, 4);
+    ctx.lineTo(0, 9);
+    ctx.lineTo(-7, 4);
+    ctx.lineTo(-10, -9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = focus.coreColor;
+    ctx.fillRect(-2, -13, 3, 13);
     ctx.restore();
   }
 
@@ -938,6 +1018,31 @@ export class Renderer {
     ctx.fillRect(handX - 1, handY - 7, 2, 2);
     ctx.restore();
     ctx.globalAlpha = 1;
+  }
+
+  drawPlayerFocusCharge(game) {
+    const player = game.player;
+    if (!player?.focusCharging || !this.onScreen(game, player.x, player.y, 54)) return;
+    const { ctx } = this;
+    const focus = getLaserFocus(player.chargingFocusId);
+    const ratio = focus.chargeTime > 0 ? clamp(player.focusCharge / focus.chargeTime, 0, 1) : 0;
+    const screen = this.toScreen(game, player.x, player.y);
+    const direction = player.facingVector || { x: 0, y: 1 };
+    const crystalX = screen.x + direction.x * 16;
+    const crystalY = screen.y + direction.y * 16;
+    const pulse = 1 + Math.sin(game.time * (8 + ratio * 8)) * (0.08 + ratio * 0.1);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = focus.color;
+    ctx.lineWidth = player.focusChargeReady ? 3 : 1 + ratio * 1.5;
+    ctx.globalAlpha = 0.42 + ratio * 0.52;
+    ctx.beginPath();
+    ctx.arc(crystalX, crystalY, (8 + ratio * 13) * pulse, -Math.PI / 2, -Math.PI / 2 + TAU * ratio);
+    ctx.stroke();
+    ctx.fillStyle = focus.coreColor;
+    const coreSize = Math.max(2, Math.round(2 + ratio * 5 + (player.focusChargeReady ? pulse * 2 : 0)));
+    ctx.fillRect(Math.round(crystalX - coreSize / 2), Math.round(crystalY - coreSize / 2), coreSize, coreSize);
+    ctx.restore();
   }
 
   drawEnemy(game, enemy) {
@@ -1035,14 +1140,17 @@ export class Renderer {
     for (const projectile of game.projectiles) {
       if (!this.onScreen(game, projectile.x, projectile.y, 32)) continue;
       const screen = this.toScreen(game, projectile.x, projectile.y);
-      ctx.strokeStyle = "rgba(40,229,255,.32)";
-      ctx.lineWidth = 9;
+      const beamWidth = projectile.beamWidth || 4;
+      ctx.strokeStyle = projectile.color || "rgba(40,229,255,.32)";
+      ctx.globalAlpha = 0.34;
+      ctx.lineWidth = beamWidth * 2.4;
       ctx.beginPath();
       ctx.moveTo(screen.x - projectile.vx * 0.018, screen.y - projectile.vy * 0.018);
       ctx.lineTo(screen.x, screen.y);
       ctx.stroke();
-      ctx.strokeStyle = "#d8ffff";
-      ctx.lineWidth = 2;
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = projectile.coreColor || "#d8ffff";
+      ctx.lineWidth = Math.max(2, beamWidth * 0.48);
       ctx.beginPath();
       ctx.moveTo(screen.x - projectile.vx * 0.02, screen.y - projectile.vy * 0.02);
       ctx.lineTo(screen.x, screen.y);
@@ -1094,7 +1202,14 @@ export class Renderer {
     for (const pickup of game.pickups) {
       if (pickup.collected || pickup.kind === "half-heart" || !this.onScreen(game, pickup.x, pickup.y, 90)) continue;
       const screen = this.toScreen(game, pickup.x, pickup.y);
-      this.punchLight(lightCtx, screen.x, screen.y, pickup.kind === "crystal-chunk" ? 66 : 48, 0.28);
+      const focusPickup = pickup.kind === "laser-focus";
+      this.punchLight(
+        lightCtx,
+        screen.x,
+        screen.y,
+        focusPickup ? 86 : pickup.kind === "crystal-chunk" ? 66 : 48,
+        focusPickup ? 0.52 : 0.28,
+      );
     }
 
     for (const decoration of game.world.decorations || []) {
@@ -1122,7 +1237,7 @@ export class Renderer {
 
     for (const projectile of game.projectiles) {
       const screen = this.toScreen(game, projectile.x, projectile.y);
-      this.punchLight(lightCtx, screen.x, screen.y, 54, 0.55);
+      this.punchLight(lightCtx, screen.x, screen.y, 48 + (projectile.beamWidth || 4) * 3, 0.55);
     }
 
     lightCtx.globalCompositeOperation = "source-over";
@@ -1145,12 +1260,26 @@ export class Renderer {
 
     const player = this.toScreen(game, game.player.x, game.player.y);
     this.paintGlow(ctx, player.x, player.y, 70 + game.player.shards * 2.5, COLORS.violet, 0.095);
+    if (game.player.focusCharging) {
+      const focus = getLaserFocus(game.player.chargingFocusId);
+      const ratio = focus.chargeTime > 0 ? clamp(game.player.focusCharge / focus.chargeTime, 0, 1) : 0;
+      const direction = game.player.facingVector || { x: 0, y: 1 };
+      this.paintGlow(
+        ctx,
+        player.x + direction.x * 16,
+        player.y + direction.y * 16,
+        28 + ratio * 54,
+        focus.color,
+        0.12 + ratio * 0.34,
+      );
+    }
 
     for (const pickup of game.pickups) {
       if (pickup.collected || !this.onScreen(game, pickup.x, pickup.y, 100)) continue;
       const screen = this.toScreen(game, pickup.x, pickup.y);
       const color = pickup.kind === "half-heart" ? COLORS.heart : pickup.kind === "crystal-chunk" ? COLORS.amber : pickup.color || COLORS.cyan;
-      this.paintGlow(ctx, screen.x, screen.y, pickup.kind === "crystal-chunk" ? 72 : 52, color, 0.3);
+      const focusPickup = pickup.kind === "laser-focus";
+      this.paintGlow(ctx, screen.x, screen.y, focusPickup ? 92 : pickup.kind === "crystal-chunk" ? 72 : 52, color, focusPickup ? 0.48 : 0.3);
     }
 
     for (const decoration of game.world.decorations || []) {
@@ -1180,7 +1309,7 @@ export class Renderer {
 
     for (const projectile of game.projectiles) {
       const screen = this.toScreen(game, projectile.x, projectile.y);
-      this.paintGlow(ctx, screen.x, screen.y, 48, COLORS.cyan, 0.4);
+      this.paintGlow(ctx, screen.x, screen.y, 42 + (projectile.beamWidth || 4) * 3, projectile.color || COLORS.cyan, 0.4);
     }
 
     ctx.globalCompositeOperation = "source-over";
@@ -1255,6 +1384,58 @@ export class Renderer {
     if (game.damageFlash <= 0) return;
     this.ctx.fillStyle = `rgba(255,35,94,${game.damageFlash * 0.22})`;
     this.ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+  }
+
+  getDoorBeaconState(game) {
+    if (
+      !game.door
+      || !game.player
+      || game.player.shards < RULES.shardGoal
+      || this.onScreen(game, game.door.x, game.door.y, DOOR_BEACON_VISIBILITY_PADDING)
+    ) {
+      return null;
+    }
+
+    return getEdgeBeaconPosition(
+      this.toScreen(game, game.player.x, game.player.y),
+      this.toScreen(game, game.door.x, game.door.y),
+    );
+  }
+
+  drawDoorBeacon(game) {
+    const beacon = this.getDoorBeaconState(game);
+    if (!beacon) return;
+
+    const { ctx } = this;
+    const pulse = game.reducedMotion ? 0 : Math.sin(game.time * 4.2);
+    const drift = game.reducedMotion ? 0 : Math.sin(game.time * 2.8) * 1.5;
+    ctx.save();
+    ctx.translate(beacon.x, beacon.y);
+    ctx.rotate(beacon.angle);
+    ctx.globalCompositeOperation = "lighter";
+    this.paintGlow(ctx, 0, 0, 22 + pulse * 3, COLORS.violet, 0.3 + pulse * 0.045);
+
+    ctx.translate(drift, 0);
+    ctx.shadowColor = COLORS.violet;
+    ctx.shadowBlur = 9;
+    ctx.fillStyle = "rgba(217, 131, 255, 0.9)";
+    ctx.beginPath();
+    ctx.moveTo(9, 0);
+    ctx.lineTo(-4, -5);
+    ctx.lineTo(-1, 0);
+    ctx.lineTo(-4, 5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.shadowBlur = 5;
+    ctx.fillStyle = "#fff0ff";
+    ctx.fillRect(2, -1, 4, 2);
+    ctx.globalAlpha = 0.46;
+    ctx.fillStyle = COLORS.violet;
+    ctx.fillRect(-10, -1, 3, 2);
+    ctx.globalAlpha = 0.24;
+    ctx.fillRect(-17, -1, 2, 2);
+    ctx.restore();
   }
 
   drawVignette(game) {

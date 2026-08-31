@@ -7,9 +7,16 @@ import {
   TILE_SIZE,
 } from "./config.js";
 import { SeededRNG } from "./maze.js";
+import {
+  DEFAULT_LASER_FOCUS_ID,
+  getDiscoverableLaserFocuses,
+  normalizeEquippedLaserFocus,
+  normalizeLaserFocusIds,
+} from "./laser-focus.js";
 import { weightedChoice } from "./utils.js";
 
 export function createPlayer(spawn, carry = {}) {
+  const laserFocusIds = normalizeLaserFocusIds(carry.laserFocusIds);
   return {
     x: spawn.worldX,
     y: spawn.worldY,
@@ -28,6 +35,17 @@ export function createPlayer(spawn, carry = {}) {
     hotbar: carry.hotbar ? [...carry.hotbar] : Array(RULES.hotbarSlots).fill(null),
     selectedSlot: carry.selectedSlot ?? 0,
     healProgress: carry.healProgress ?? 0,
+    laserFocusIds,
+    equippedFocusId: normalizeEquippedLaserFocus(
+      carry.equippedFocusId ?? DEFAULT_LASER_FOCUS_ID,
+      laserFocusIds,
+    ),
+    focusCharging: false,
+    focusCharge: 0,
+    focusChargeReady: false,
+    chargingFocusId: null,
+    focusChargeParticleTimer: 0,
+    focusChargeSoundStep: -1,
   };
 }
 
@@ -108,6 +126,28 @@ function chooseUniqueCells(candidates, count, rng, occupied, minimumSeparation =
   return selected;
 }
 
+function chooseFocusChamber(world, rng, occupied) {
+  const rooms = world.rooms || [];
+  const candidates = rooms.filter((room) => {
+    if (room.id === 0 || !room.center) return false;
+    const center = room.center;
+    if (cellDistanceSquared(center, world.spawn) < 11 ** 2) return false;
+    if (cellDistanceSquared(center, world.door) < 5 ** 2) return false;
+    return !occupied.has(`${center.x},${center.y}`);
+  });
+  if (candidates.length === 0) return null;
+
+  // Favour larger, remote chambers, then retain seeded variation among the best.
+  const ranked = candidates
+    .map((room) => ({
+      room,
+      score: room.width * room.height + Math.sqrt(cellDistanceSquared(room.center, world.spawn)) * 2 + rng.range(0, 24),
+    }))
+    .sort((left, right) => right.score - left.score);
+  const chamber = rng.pick(ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 3)))).room;
+  return { ...chamber.center, roomId: chamber.id };
+}
+
 /** Populate one generated map with balanced pickups and territory-based enemies. */
 export function populateWorld(world, levelId, difficultyId, seed) {
   const rng = new SeededRNG(`${seed}:population`);
@@ -120,10 +160,30 @@ export function populateWorld(world, levelId, difficultyId, seed) {
   const regularCount = Math.max(13, Math.round((17 + levelId * 2) * difficulty.crystalSpawnMultiplier));
   const chunkCount = Math.max(3, Math.round((4 + levelId) * Math.max(0.8, difficulty.crystalSpawnMultiplier)));
   const heartCount = Math.max(1, Math.round((6 - levelId) * difficulty.halfHeartSpawnMultiplier));
+  const discoverableFocus = rng.pick(getDiscoverableLaserFocuses());
+  const focusCell = discoverableFocus ? chooseFocusChamber(world, rng, occupied) : null;
+  if (focusCell) occupied.add(`${focusCell.x},${focusCell.y}`);
   const pickupCount = regularCount + chunkCount + heartCount;
   const pickupCells = chooseUniqueCells(candidatePool, pickupCount, rng, occupied, 2);
   const pickups = [];
   let cursor = 0;
+
+  if (focusCell) {
+    pickups.push({
+      id: `focus-${discoverableFocus.id}`,
+      kind: "laser-focus",
+      focusId: discoverableFocus.id,
+      chamberType: "focus-chamber",
+      roomId: focusCell.roomId,
+      x: (focusCell.x + 0.5) * TILE_SIZE,
+      y: (focusCell.y + 0.5) * TILE_SIZE,
+      tileX: focusCell.x,
+      tileY: focusCell.y,
+      color: discoverableFocus.color,
+      phase: rng.range(0, Math.PI * 2),
+      collected: false,
+    });
+  }
 
   const addPickup = (kind, amount, color) => {
     for (let index = 0; index < amount && cursor < pickupCells.length; index += 1) {

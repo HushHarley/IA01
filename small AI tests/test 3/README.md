@@ -17,13 +17,17 @@ Then visit `http://127.0.0.1:4173/`.
 ## Controls
 
 - `WASD` or arrow keys: smooth movement
-- `Space`: interact with a nearby, faced exit gate; otherwise fire a crystal laser
+- `Space`: interact with a nearby, faced exit gate; otherwise use the equipped Laser Focus
+- Hold and release `Space`: charge and fire a focus that has a charge time, such as Heavy Focus
+- Hold `Tab` + press `1`–`6`: equip an attuned Laser Focus (`1` is always Standard; the discovered special focus is `2`)
 - `1`–`6`: select a hotbar slot
 - Mouse wheel: cycle hotbar slots
 - `F`: use the selected item
 - `Esc`: pause or resume
 
 Shards are objective progress, laser ammunition, and light. Collect 10, return to the exit, face it, and survive the two-second activation as the nine original frame sockets fill one by one and the tenth charge fully awakens the center crystal. Collected crystal veins reform elsewhere after a difficulty-scaled delay, with a three-second emergency recovery if the cave is exhausted before the objective is charged. Half Hearts occupy individual hotbar slots; using one fills half of the next life in the lives row, and using two restores one life.
+
+Every run begins with Standard Focus: an instant, one-damage shot that costs one shard and kills a Brute in two hits. A remote Focus Chamber hides Heavy Focus, whose 0.85-second charge releases two damage for the same one-shard cost. The dedicated focus slot is separate from the item hotbar. Attuned focuses retain discovery order for Tab + number selection and carry between cleared levels, but full death restores a Standard-only library; Nightmare also returns the run to Level 1.
 
 ## Included systems
 
@@ -35,16 +39,19 @@ Shards are objective progress, laser ammunition, and light. Collect 10, return t
 - Atlas-anchored emissive eyes that remain aligned when enemies turn and scale
 - Wander, scan, alert, chase, search, and return AI with line-of-sight hiding
 - Loose mined Shards, +2 Crystal Chunks, safe crystal-vein respawns, six non-stacking item slots, and lives-row Half Heart healing
+- Data-driven Laser Focus definitions, a dedicated focus HUD slot, Tab-modified focus selection, and procedural Focus Chambers
+- Standard and Heavy tactical lasers with distinct cooldown, charge, damage, beam-width, speed, range, particle, light, and audio feedback
 - Three-frame walking cycles with distinct down, left, right, and up artwork
 - Lives, knockback, invulnerability, standard retries, and Nightmare run resets
 - Level unlocks and preference persistence through `localStorage`
-- Responsive menu/HUD, generated crystal ambience, synthesized WebAudio cues, pause/death/clear/win states, and reduced-motion support
+- Responsive menu/HUD, ten-shard off-screen exit beacon, generated crystal ambience, synthesized WebAudio cues, pause/death/clear/win states, and reduced-motion support
 
 ## Structure
 
 - `index.html` / `style.css`: responsive menu, HUD, overlays, and presentation
 - `assets/`: original menu backdrop, transparent gameplay, empty-gate, mined-pickup, directional player sprite atlases, the cracked death-crystal sprite, and the favicon
 - `js/config.js`: balancing and data definitions
+- `js/laser-focus.js`: expandable Laser Focus definitions and loadout normalization
 - `js/maze.js`: deterministic cave generation and validation
 - `js/game.js`: state machine and gameplay orchestration
 - `js/renderer.js`: pixel-style Canvas rendering and lighting
