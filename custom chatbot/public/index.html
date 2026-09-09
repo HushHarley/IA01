@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Assistant bilingue de soutien technique propulsé par des API d’IA serveur.">
+    <title>Nexus Support — Assistant de soutien technique</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <button id="sidebar-toggle" class="header-icon-button sidebar-toggle" type="button" aria-expanded="false" aria-controls="chat-sidebar" aria-label="Afficher les conversations">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="brand-mark" aria-hidden="true">NS</div>
+        <div class="brand-copy">
+          <h1>Nexus Support</h1>
+          <p id="app-description">Assistant de soutien technique</p>
+        </div>
+        <div class="header-actions">
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42"/><circle cx="12" cy="12" r="4"/></svg>
+            <span id="theme-label">Mode sombre</span>
+          </button>
+          <div id="language-switcher" class="language-switcher" role="group" aria-label="Langue de l’interface">
+            <button class="language-button is-active" type="button" data-ui-language="fr" aria-pressed="true">FR</button>
+            <button class="language-button" type="button" data-ui-language="en" aria-pressed="false">EN</button>
+          </div>
+          <div id="connection-status" class="connection-status" aria-label="État du service">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="status-label">Prêt</span>
+          </div>
+        </div>
+      </header>
+
+      <div id="workspace" class="workspace">
+        <aside id="chat-sidebar" class="chat-sidebar" aria-labelledby="conversations-title">
+          <div class="sidebar-header">
+            <h2 id="conversations-title">Conversations</h2>
+            <button id="new-chat-button" class="new-chat-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              <span id="new-chat-label">Nouvelle conversation</span>
+            </button>
+          </div>
+          <nav id="conversation-navigation" aria-label="Conversations précédentes">
+            <ul id="conversation-list" class="conversation-list"></ul>
+          </nav>
+          <p id="sidebar-note" class="sidebar-note">Les conversations sont temporaires et disparaissent lorsque la session expire ou que le serveur redémarre.</p>
+        </aside>
+        <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="Fermer le panneau des conversations" hidden></button>
+
+        <section id="chat-panel" class="chat-panel is-empty" aria-label="Conversation de soutien technique">
+        <div id="welcome" class="welcome">
+          <h2 id="welcome-title">Bonjour, comment puis-je vous aider ?</h2>
+          <p id="welcome-description">Un problème technique ? Trouvons la solution ensemble.</p>
+        </div>
+        <div id="conversation" class="conversation" role="log" aria-live="polite" aria-relevant="additions">
+        </div>
+
+        <div id="thinking" class="thinking" role="status" aria-live="polite" hidden>
+          <span></span><span></span><span></span>
+          <span id="thinking-label">Analyse en cours…</span>
+        </div>
+
+        <div id="error-banner" class="error-banner" role="alert" hidden></div>
+
+        <form id="chat-form" class="composer">
+          <label id="message-label" class="sr-only" for="message-input">Votre message</label>
+          <textarea
+            id="message-input"
+            name="message"
+            rows="1"
+            maxlength="4000"
+            placeholder="Écrivez votre message…"
+            autocomplete="off"
+            required
+          ></textarea>
+          <button id="send-button" class="send-button" type="submit" aria-label="Envoyer le message">
+            <span id="send-label">Envoyer</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3.4 20.4 17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a1 1 0 0 0-1.36 1.12l1.2 5.5a1 1 0 0 0 .87.78l8.08.8-8.08.8a1 1 0 0 0-.87.78l-1.2 5.5A1 1 0 0 0 3.4 20.4Z"/></svg>
+          </button>
+        </form>
+
+        <footer class="chat-footer">
+          <div class="footer-settings">
+            <label class="provider-control" for="provider-select">
+              <span id="provider-label">Fournisseur</span>
+              <select id="provider-select" name="provider">
+                <option value="openai">OpenAI</option>
+                <option value="anthropic" selected>Claude (Anthropic)</option>
+              </select>
+            </label>
+            <label class="model-control" for="model-select">
+              <span id="model-label">Modèle</span>
+              <select id="model-select" name="model">
+                <option value="luna" data-model-option="luna">Luna</option>
+                <option value="terra" data-model-option="terra" selected>Terra</option>
+                <option value="sol" data-model-option="sol">Sol</option>
+              </select>
+            </label>
+            <label class="reasoning-control" for="reasoning-select">
+              <span id="reasoning-label">Raisonnement</span>
+              <select id="reasoning-select" name="reasoning">
+                <option value="instant" data-reasoning-option="instant" selected>Instantané</option>
+                <option value="medium" data-reasoning-option="medium">Moyen</option>
+                <option value="high" data-reasoning-option="high">Élevé</option>
+                <option value="very_high" data-reasoning-option="veryHigh">Très élevé</option>
+                <option value="ultra" data-reasoning-option="ultra">Ultra</option>
+              </select>
+            </label>
+            <span id="keyboard-hint">Entrée pour envoyer · Maj+Entrée pour une nouvelle ligne</span>
+          </div>
+        </footer>
+        <details class="privacy-details">
+        <summary id="privacy-label">Confidentialité</summary>
+        <p id="privacy-notice" class="privacy-notice">
+          Confidentialité : vos messages sont envoyés au fournisseur d’IA sélectionné pour traitement et restent temporairement dans la mémoire de ce serveur. Le fournisseur peut conserver certaines données selon ses politiques de sécurité et de conservation. Ne saisissez jamais de mot de passe, de clé API ou d’autre secret.
+        </p>
+        </details>
+        </section>
+      </div>
+    </main>
+
+    <template id="message-template">
+      <article class="message">
+        <div class="avatar" aria-hidden="true"></div>
+        <div class="message-content"></div>
+      </article>
+    </template>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
